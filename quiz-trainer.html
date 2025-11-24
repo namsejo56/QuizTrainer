@@ -12,74 +12,118 @@
   <div class="container">
     <div id="errorMsg" class="error-msg hidden"></div>
 
+    <!-- Question Grid - Outside testSection -->
+    <div id="questionGrid" class="question-grid-sidebar hidden"></div>
+
     <div id="configModal" class="modal hidden">
-      <div class="modal-content">
-        <h2>Configure Test</h2>
-        <div class="form-group">
-          <label for="numQuestions">Number of Questions</label>
-          <input type="number" id="numQuestions" min="1" value="65">
-          <small id="maxQuestions"></small>
+      <div class="modal-content config-modal">
+        <div class="modal-header">
+          <h2>⚙️ Configure Your Test</h2>
+          <p class="modal-subtitle">Customize your learning experience</p>
         </div>
-        <div class="form-group">
-          <label>Question Selection</label>
-          <div class="radio-group">
-            <label>
-              <input type="radio" name="questionSelection" value="random" checked>
-              Random selection
-            </label>
-            <label>
-              <input type="radio" name="questionSelection" value="range">
-              Select by range
-            </label>
-          </div>
-        </div>
-        <div class="form-group" id="rangeGroup" style="display: none;">
-          <label>Question Range</label>
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <div style="flex: 1;">
-              <label for="rangeFrom" style="font-size: 12px;">From</label>
-              <input type="number" id="rangeFrom" min="1" value="1" style="width: 100%;">
+        <div class="config-sections">
+          <!-- Mode Selection -->
+          <div class="config-section mode-section">
+            <h3 class="section-title">📚 Select Mode</h3>
+            <div class="mode-cards">
+              <label class="mode-card">
+                <input type="radio" name="mode" value="practice" checked>
+                <div class="mode-card-content">
+                  <div class="mode-icon">✏️</div>
+                  <div class="mode-name">Practice</div>
+                  <div class="mode-desc">Learn at your pace with instant feedback</div>
+                </div>
+              </label>
+              <label class="mode-card">
+                <input type="radio" name="mode" value="timed">
+                <div class="mode-card-content">
+                  <div class="mode-icon">⏱️</div>
+                  <div class="mode-name">Tested</div>
+                  <div class="mode-desc">Challenge yourself with time limits</div>
+                </div>
+              </label>
+              <label class="mode-card">
+                <input type="radio" name="mode" value="flashcard">
+                <div class="mode-card-content">
+                  <div class="mode-icon">🎴</div>
+                  <div class="mode-name">Flashcard</div>
+                  <div class="mode-desc">Quick review with flip cards</div>
+                </div>
+              </label>
             </div>
-            <div style="flex: 1;">
-              <label for="rangeTo" style="font-size: 12px;">To</label>
-              <input type="number" id="rangeTo" min="1" value="65" style="width: 100%;">
+          </div>
+          <!-- Time Limit (for timed mode) -->
+          <div class="config-section" id="timeGroup" style="display: none;">
+            <label for="timeMinutes" class="section-title">⏰ Time Limit</label>
+            <div class="input-with-unit">
+              <input type="number" id="timeMinutes" min="1" value="60" class="styled-input">
+              <span class="input-unit">minutes</span>
             </div>
           </div>
+          <!-- Question Selection -->
+          <div class="config-section">
+            <h3 class="section-title">🎯 Question Selection</h3>
+            <div class="selection-tabs">
+              <label class="selection-tab">
+                <input type="radio" name="questionSelection" value="range" checked>
+                <span class="tab-content">
+                  <span class="tab-icon">📊</span>
+                  <span class="tab-label">By Range</span>
+                </span>
+              </label>
+              <label class="selection-tab">
+                <input type="radio" name="questionSelection" value="random">
+                <span class="tab-content">
+                  <span class="tab-icon">🎲</span>
+                  <span class="tab-label">Random</span>
+                </span>
+              </label>
+            </div>
+            <!-- Range Selection -->
+            <div id="rangeGroup" class="range-inputs">
+              <div class="range-input-group">
+                <label for="rangeFrom">From</label>
+                <input type="number" id="rangeFrom" min="1" value="1" class="styled-input">
+              </div>
+              <span class="range-separator">—</span>
+              <div class="range-input-group">
+                <label for="rangeTo">To</label>
+                <input type="number" id="rangeTo" min="1" value="65" class="styled-input">
+              </div>
+              </div>
+<!-- Random Selection -->
+<div id="randomGroup" class="random-inputs" style="display: none;">
+  <label for="numQuestions">Number of Questions</label>
+  <input type="number" id="numQuestions" min="1" value="65" class="styled-input">
+  <small id="maxQuestions" class="input-hint"></small>
+</div>
+</div>
+<!-- Sort Order & Options -->
+<div class="config-section">
+  <h3 class="section-title">⚙️ Additional Settings</h3>
+  <div class="settings-row">
+    <div class="settings-item">
+      <select id="sortOrder" class="styled-select">
+        <option value="original">📋 Original order</option>
+        <option value="newest">⬆️ Newest first</option>
+        <option value="oldest">⬇️ Oldest first</option>
+      </select>
+    </div>
+    <div class="settings-item">
+      <label class="checkbox-option">
+        <input type="checkbox" id="shuffleChoices" checked>
+        <span class="checkbox-label">
+          <span class="checkbox-text">Shuffle choices</span>
+        </span>
+      </label>
+    </div>
+    </div>
+</div>
         </div>
-        <div class="form-group">
-          <label for="sortOrder">Sort Order</label>
-          <select id="sortOrder" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            <option value="original">Original order</option>
-            <option value="newest">Newest first (by index)</option>
-            <option value="oldest">Oldest first (by index)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Mode</label>
-          <div class="radio-group">
-            <label>
-              <input type="radio" name="mode" value="practice" checked>
-              Practice (no timer)
-            </label>
-            <label>
-              <input type="radio" name="mode" value="timed">
-              Timed
-            </label>
-          </div>
-        </div>
-        <div class="form-group" id="timeGroup" style="display: none;">
-          <label for="timeMinutes">Time Limit (minutes)</label>
-          <input type="number" id="timeMinutes" min="1" value="60">
-        </div>
-        <div class="form-group">
-          <label>
-            <input type="checkbox" id="shuffleChoices" checked>
-            Shuffle choices
-          </label>
-        </div>
+
         <div class="modal-actions">
-          <button id="startBtn" class="btn-primary">Start Test</button>
           <button id="cancelBtn" class="btn-secondary">Cancel</button>
+          <button id="startBtn" class="btn-primary">🚀 Start</button>
         </div>
       </div>
     </div>
@@ -95,14 +139,17 @@
       <div class="progress-bar">
         <div id="progressFill" class="progress-fill"></div>
       </div>
-      <div class="test-content-wrapper">
-        <div id="questionContainer"></div>
-        <div id="questionGrid" class="question-grid hidden"></div>
+      <div id="questionContainer"></div>
+      <div id="flashcardToggle" class="flashcard-toggle hidden">
+        <label class="toggle-switch">
+          <input type="checkbox" id="showOnlyCorrect" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">Show only correct answer</span>
+        </label>
       </div>
       <div class="test-navigation">
         <button id="prevBtn" class="btn-secondary">Previous</button>
         <button id="submitAnswerBtn" class="btn-submit-answer hidden">Submit Answer</button>
-        <div id="answeredCount"></div>
         <button id="nextBtn" class="btn-primary">Next</button>
         <button id="submitBtn" class="btn-success hidden">Submit Test</button>
       </div>
@@ -128,17 +175,36 @@
           </div>
         </div>
         <div class="result-details">
-          <h3>Detailed Results:</h3>
+          <div class="result-header">
+            <h3>Detailed Results:</h3>
+            <div class="result-filters">
+              <button id="filterAll" class="filter-btn active">All (<span id="countAll">0</span>)</button>
+              <button id="filterCorrect" class="filter-btn filter-correct">Correct (<span id="countCorrect">0</span>)</button>
+              <button id="filterIncorrect" class="filter-btn filter-incorrect">Incorrect (<span
+                  id="countIncorrect">0</span>)</button>
+            </div>
+            </div>
           <div id="detailsList"></div>
         </div>
         <div class="modal-actions">
-          <button id="saveBtn" class="btn-primary">Save Results</button>
+          <button id="saveBtn" class="btn-primary">🚀 Start New Test</button>
           <button id="newTestBtn" class="btn-secondary">Back to Home</button>
         </div>
       </div>
     </div>
+<!-- Question Detail Modal -->
+<div id="questionDetailModal" class="modal hidden">
+  <div class="modal-content question-detail-content">
+    <button id="closeQuestionDetail" class="close-detail-btn">✕</button>
+    <div id="questionDetailContainer"></div>
   </div>
+</div>
 
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+    </div>
+    
+    <script src="db.js"></script>
   <script src="quiz_trainer.js"></script>
 
 </body>

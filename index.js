@@ -14,6 +14,11 @@ const els = {
   quizName: document.getElementById("quizName"),
   saveQuizBtn: document.getElementById("saveQuizBtn"),
   skipSaveBtn: document.getElementById("skipSaveBtn"),
+  testHistorySection: document.getElementById("testHistorySection"),
+  testHistoryList: document.getElementById("testHistoryList"),
+  filterQuiz: document.getElementById("filterQuiz"),
+  filterStatus: document.getElementById("filterStatus"),
+  toast: document.getElementById("toast"),
 };
 
 // Show error
@@ -31,6 +36,7 @@ async function initApp() {
     try {
       await quizDB.init();
       await loadSavedQuizzes();
+      await loadTestHistory();
     } catch (err) {
       console.error("Database initialization failed:", err);
     }
@@ -235,6 +241,244 @@ els.skipSaveBtn.addEventListener("click", () => {
   // Redirect to quiz trainer page
   window.location.href = "quiz-trainer.html";
 });
+
+// Load test history
+async function loadTestHistory() {
+  try {
+    const results = await quizDB.getAllResults();
+
+    // Update quiz filter dropdown
+    const quizNames = [...new Set(results.map((r) => r.quizName))];
+    let filterOptions = '<option value="">All Quizzes</option>';
+    quizNames.forEach((name) => {
+      filterOptions += `<option value="${escapeHtml(name)}">${escapeHtml(
+        name
+      )}</option>`;
+    });
+    els.filterQuiz.innerHTML = filterOptions;
+
+    // Render history
+    renderTestHistory(results);
+  } catch (err) {
+    console.error("Failed to load test history:", err);
+    els.testHistoryList.innerHTML =
+      '<p class="empty-state">Failed to load test history</p>';
+  }
+}
+
+// Render test history with current filters
+function renderTestHistory(results = null) {
+  // Apply filters if not provided
+  if (!results) {
+    applyHistoryFilters();
+    return;
+  }
+
+  if (results.length === 0) {
+    els.testHistoryList.innerHTML =
+      '<p class="empty-state">No test results yet. Complete a quiz to see your history!</p>';
+    return;
+  }
+
+  let html = "";
+  results.forEach((result) => {
+    const date = new Date(result.date);
+    const dateStr = date.toLocaleDateString();
+    const timeStr = date.toLocaleTimeString();
+    const passed = result.passed;
+    const badgeClass = passed ? "passed" : "failed";
+    const badgeText = passed ? "✓ Passed" : "✗ Failed";
+
+    // Mode icon
+    const modeIcons = {
+      practice: "✏️",
+      timed: "⏱️",
+      flashcard: "🎴",
+    };
+    const modeIcon = modeIcons[result.mode] || "📝";
+
+    // Duration
+    const duration = formatDuration(result.durationSeconds);
+
+    html += `
+      <div class="history-card" data-result-id="${result.id}">
+        <div class="history-card-header">
+          <div class="history-quiz-name">${escapeHtml(result.quizName)}</div>
+        </div>
+        <div class="history-card-body">
+          <div class="history-stats">
+            <span class="score-badge ${badgeClass}">${badgeText}</span>
+            <span class="history-stat">
+              <span class="stat-icon">${modeIcon}</span>
+              <span class="stat-text">${result.mode}</span>
+            </span>
+            <span class="history-stat">
+              <span class="stat-icon">📊</span>
+              <span class="stat-text">${result.score}/${
+      result.total
+    } (${result.percent.toFixed(1)}%)</span>
+            </span>
+            <span class="history-stat">
+              <span class="stat-icon">⏱️</span>
+              <span class="stat-text">${duration}</span>
+            </span>
+            <span class="history-stat">
+              <span class="stat-icon">📅</span>
+              <span class="stat-text">${dateStr} ${timeStr}</span>
+            </span>            
+          </div>
+          <div class="history-card-actions">
+              <button class="btn-view-detail" data-result-id="${
+                result.id
+              }">View Details</button>
+              <button class="btn-delete-result" data-result-id="${
+                result.id
+              }">Delete</button>
+            </div>
+        </div>
+      </div>
+    `;
+  });
+
+  els.testHistoryList.innerHTML = html;
+
+  // Add event listeners
+  document.querySelectorAll(".btn-view-detail").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const resultId = parseInt(e.target.dataset.resultId);
+      viewResultDetail(resultId);
+    });
+  });
+
+  document.querySelectorAll(".btn-delete-result").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const resultId = parseInt(e.target.dataset.resultId);
+      deleteResultWithUndo(resultId);
+    });
+  });
+}
+
+// Apply history filters
+async function applyHistoryFilters() {
+  try {
+    const quizFilter = els.filterQuiz.value;
+    const statusFilter = els.filterStatus.value;
+
+    const filters = {};
+    if (quizFilter) filters.quizName = quizFilter;
+    if (statusFilter === "passed") filters.passed = true;
+    if (statusFilter === "failed") filters.passed = false;
+
+    const results = await quizDB.getAllResults(filters);
+    renderTestHistory(results);
+  } catch (err) {
+    console.error("Failed to apply filters:", err);
+    showToast("Failed to load results", "error");
+  }
+}
+
+// View result detail
+async function viewResultDetail(resultId) {
+  try {
+    const result = await quizDB.getResultById(resultId);
+
+    // Store in sessionStorage and navigate to quiz-trainer page to show result
+    sessionStorage.setItem("viewResult", JSON.stringify(result));
+    window.location.href = "quiz-trainer.html";
+  } catch (err) {
+    console.error("Failed to load result:", err);
+    showToast("Failed to load result details", "error");
+  }
+}
+
+// Delete result with undo toast
+let lastDeletedResult = null;
+let deleteTimeout = null;
+
+async function deleteResultWithUndo(resultId) {
+  try {
+    // Get result before deleting (for undo)
+    lastDeletedResult = await quizDB.getResultById(resultId);
+
+    // Delete from database
+    await quizDB.deleteResult(resultId);
+
+    // Reload history
+    await loadTestHistory();
+
+    // Show undo toast
+    showToastWithUndo("Result deleted", async () => {
+      // Undo: restore result
+      if (lastDeletedResult) {
+        await quizDB.saveResult(lastDeletedResult);
+        await loadTestHistory();
+        showToast("Result restored", "success");
+        lastDeletedResult = null;
+      }
+    });
+  } catch (err) {
+    console.error("Failed to delete result:", err);
+    showToast("Failed to delete result", "error");
+  }
+}
+
+// Format duration from seconds
+function formatDuration(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+
+  if (h > 0) {
+    return `${h}h ${m}m ${s}s`;
+  } else if (m > 0) {
+    return `${m}m ${s}s`;
+  } else {
+    return `${s}s`;
+  }
+}
+
+// Show toast notification
+function showToast(message, type = "info") {
+  if (!els.toast) return;
+
+  els.toast.textContent = message;
+  els.toast.className = `toast toast-${type}`;
+  els.toast.classList.remove("hidden");
+
+  setTimeout(() => {
+    els.toast.classList.add("hidden");
+  }, 3000);
+}
+
+// Show toast with undo button
+function showToastWithUndo(message, undoCallback) {
+  if (!els.toast) return;
+
+  clearTimeout(deleteTimeout);
+
+  els.toast.innerHTML = `
+    <span>${message}</span>
+    <button class="toast-undo-btn" id="undoBtn">Undo</button>
+  `;
+  els.toast.className = "toast toast-undo";
+  els.toast.classList.remove("hidden");
+
+  const undoBtn = document.getElementById("undoBtn");
+  undoBtn.addEventListener("click", () => {
+    clearTimeout(deleteTimeout);
+    els.toast.classList.add("hidden");
+    undoCallback();
+  });
+
+  deleteTimeout = setTimeout(() => {
+    els.toast.classList.add("hidden");
+    lastDeletedResult = null;
+  }, 5000);
+}
+
+// Add filter event listeners
+els.filterQuiz.addEventListener("change", applyHistoryFilters);
+els.filterStatus.addEventListener("change", applyHistoryFilters);
 
 // Utility function to escape HTML
 function escapeHtml(text) {

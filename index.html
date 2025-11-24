@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quiz Trainer - Home</title>
-  <link rel="stylesheet" href="./quiz_trainer.css">
+  <link rel="stylesheet" href="./index.css">
 </head>
 
 <body>
@@ -29,7 +29,24 @@
       <h2>📚 Saved Quizzes</h2>
       <div id="savedQuizzesList" class="saved-quizzes-list"></div>
     </div>
-    
+
+    <!-- Test History Section -->
+    <div id="testHistorySection" class="card">
+      <div class="history-header">
+        <h2>📊 Test History</h2>
+        <div class="history-filters">
+          <select id="filterQuiz" class="styled-select">
+            <option value="">All Quizzes</option>
+          </select>
+          <select id="filterStatus" class="styled-select">
+            <option value="">All Results</option>
+            <option value="passed">Passed</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+      </div>
+      <div id="testHistoryList" class="test-history-list"></div>
+    </div>
     <!-- Save Quiz Modal -->
     <div id="saveQuizModal" class="modal hidden">
       <div class="modal-content">
@@ -47,6 +64,8 @@
           </div>
           </div>
     </div>
+<!-- Toast Notification -->
+<div id="toast" class="toast hidden"></div>
     </div>
 
   <script src="db.js"></script>

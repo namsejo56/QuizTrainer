@@ -7,6 +7,9 @@ let questionResults = {}; // Store if each question was answered correctly
 let currentQuestion = 0;
 let testStartTime = null;
 let timerInterval = null;
+let isFlipped = false; // For flashcard mode
+let currentFilter = "all"; // Filter state: 'all', 'correct', 'incorrect'
+let allResultDetails = []; // Store all result details for filtering
 
 // DOM elements
 const els = {
@@ -17,6 +20,7 @@ const els = {
   timeGroup: document.getElementById("timeGroup"),
   timeMinutes: document.getElementById("timeMinutes"),
   shuffleChoices: document.getElementById("shuffleChoices"),
+  showOnlyCorrect: document.getElementById("showOnlyCorrect"),
   startBtn: document.getElementById("startBtn"),
   cancelBtn: document.getElementById("cancelBtn"),
   testSection: document.getElementById("testSection"),
@@ -25,7 +29,6 @@ const els = {
   progressFill: document.getElementById("progressFill"),
   questionContainer: document.getElementById("questionContainer"),
   questionGrid: document.getElementById("questionGrid"),
-  answeredCount: document.getElementById("answeredCount"),
   prevBtn: document.getElementById("prevBtn"),
   nextBtn: document.getElementById("nextBtn"),
   submitBtn: document.getElementById("submitBtn"),
@@ -41,6 +44,15 @@ const els = {
   detailsList: document.getElementById("detailsList"),
   saveBtn: document.getElementById("saveBtn"),
   newTestBtn: document.getElementById("newTestBtn"),
+  filterAll: document.getElementById("filterAll"),
+  filterCorrect: document.getElementById("filterCorrect"),
+  filterIncorrect: document.getElementById("filterIncorrect"),
+  countAll: document.getElementById("countAll"),
+  countCorrect: document.getElementById("countCorrect"),
+  countIncorrect: document.getElementById("countIncorrect"),
+  questionDetailModal: document.getElementById("questionDetailModal"),
+  questionDetailContainer: document.getElementById("questionDetailContainer"),
+  closeQuestionDetail: document.getElementById("closeQuestionDetail"),
 };
 
 // Utility: Sanitize HTML to prevent XSS
@@ -86,9 +98,19 @@ function showError(message) {
   }, 5000);
 }
 
-// Initialize app - load quiz data from sessionStorage
+// Initialize app - load quiz data from sessionStorage or view result
 function initApp() {
   try {
+    // Check if viewing a saved result
+    const viewResult = sessionStorage.getItem("viewResult");
+    if (viewResult) {
+      const result = JSON.parse(viewResult);
+      sessionStorage.removeItem("viewResult");
+      showSavedResult(result);
+      return;
+    }
+
+    // Otherwise, load quiz data for taking a test
     const quizData = sessionStorage.getItem("quizData");
 
     if (!quizData) {
@@ -119,7 +141,7 @@ function initApp() {
 function openConfigModal() {
   els.numQuestions.value = Math.min(65, questions.length);
   els.numQuestions.max = questions.length;
-  els.maxQuestions.textContent = `(max: ${questions.length})`;
+  els.maxQuestions.textContent = `(maximum: ${questions.length} questions)`;
 
   // Set range defaults
   const rangeFrom = document.getElementById("rangeFrom");
@@ -129,10 +151,12 @@ function openConfigModal() {
   rangeFrom.value = 1;
   rangeTo.value = Math.min(65, questions.length);
 
-  els.configModal.classList.remove("hidden");
-}
+  // Show range by default, hide random
+  document.getElementById("rangeGroup").style.display = "flex";
+  document.getElementById("randomGroup").style.display = "none";
 
-// Handle mode change
+  els.configModal.classList.remove("hidden");
+} // Handle mode change
 document.querySelectorAll('input[name="mode"]').forEach((radio) => {
   radio.addEventListener("change", (e) => {
     if (e.target.value === "timed") {
@@ -149,13 +173,13 @@ document
   .forEach((radio) => {
     radio.addEventListener("change", (e) => {
       const rangeGroup = document.getElementById("rangeGroup");
-      const numQuestionsInput = document.getElementById("numQuestions");
+      const randomGroup = document.getElementById("randomGroup");
       if (e.target.value === "range") {
-        rangeGroup.style.display = "block";
-        numQuestionsInput.disabled = true;
+        rangeGroup.style.display = "flex";
+        randomGroup.style.display = "none";
       } else {
         rangeGroup.style.display = "none";
-        numQuestionsInput.disabled = false;
+        randomGroup.style.display = "block";
       }
     });
   });
@@ -168,6 +192,10 @@ els.cancelBtn.addEventListener("click", () => {
   currentQuestion = 0;
   testStartTime = null;
   clearInterval(timerInterval);
+
+  // Hide question grid and remove sidebar class
+  els.questionGrid.classList.add("hidden");
+  document.querySelector(".container").classList.remove("has-sidebar");
 
   // Redirect to home page
   window.location.href = "index.html";
@@ -281,8 +309,17 @@ function generateTest(config) {
   // Hide config modal
   els.configModal.classList.add("hidden");
 
-  // Show test section
+  // Show test section and question grid
   els.testSection.classList.remove("hidden");
+  els.questionGrid.classList.remove("hidden");
+  document.querySelector(".container").classList.add("has-sidebar");
+
+  // Update exit button text based on mode
+  if (config.mode === "flashcard") {
+    els.exitBtn.textContent = "Exit";
+  } else {
+    els.exitBtn.textContent = "Submit Test";
+  }
 
   // Start timer if timed mode
   if (config.mode === "timed" && config.timeMinutes > 0) {
@@ -291,11 +328,14 @@ function generateTest(config) {
     els.timer.classList.add("hidden");
   }
 
-  // Show question grid for both practice and timed mode
-  els.questionGrid.classList.remove("hidden");
+  // Render question grid
   renderQuestionGrid();
 
-  renderQuestion();
+  if (config.mode === "flashcard") {
+    renderFlashcard();
+  } else {
+    renderQuestion();
+  }
 }
 
 // Start timer
@@ -356,16 +396,155 @@ function renderQuestionGrid() {
     item.addEventListener("click", () => {
       const questionIndex = parseInt(item.dataset.question);
       currentQuestion = questionIndex;
-      renderQuestion();
+      isFlipped = false;
+      if (testSession.config.mode === "flashcard") {
+        renderFlashcard();
+      } else {
+        renderQuestion();
+      }
       renderQuestionGrid();
     });
   });
+}
+
+// Render flashcard
+function renderFlashcard() {
+  const q = testSession.questions[currentQuestion];
+  const totalQuestions = testSession.questions.length;
+
+  // Update progress
+  els.questionProgress.textContent = `Card ${
+    currentQuestion + 1
+  } of ${totalQuestions}`;
+  els.progressFill.style.width = `${
+    ((currentQuestion + 1) / totalQuestions) * 100
+  }%`;
+
+  // Hide submit answer button and answered count in flashcard mode
+  els.submitAnswerBtn.classList.add("hidden");
+
+  // Show flashcard toggle
+  const flashcardToggle = document.getElementById("flashcardToggle");
+  flashcardToggle.classList.remove("hidden");
+
+  // Build flashcard HTML
+  const correctChoice = q.choices.find((c) => c.is_correct);
+  const correctAnswer = correctChoice ? correctChoice.letter : null;
+
+  let html = '<div class="flashcard-container">';
+  html += `<div class="flashcard ${
+    isFlipped ? "flipped" : ""
+  }" onclick="toggleFlashcard()">`;
+
+  // Front of card (Question)
+  html += '<div class="flashcard-face flashcard-front">';
+  html += '<div class="flashcard-label">Question</div>';
+  html += `<div class="flashcard-content">${sanitizeHTML(q.text)}</div>`;
+
+  if (q.question_images && q.question_images.length > 0) {
+    html += '<div class="flashcard-images">';
+    q.question_images.forEach((img) => {
+      html += `<img src="${sanitizeHTML(img)}" alt="Question image">`;
+    });
+    html += "</div>";
+  }
+
+  html += '<div class="flashcard-hint">Click to reveal answer</div>';
+  html += "</div>";
+
+  // Back of card (Answer)
+  html += '<div class="flashcard-face flashcard-back">';
+  html += '<div class="flashcard-label">Answer</div>';
+  html += '<div class="flashcard-answer-content">';
+
+  const showOnlyCorrectCheckbox = document.getElementById("showOnlyCorrect");
+  const showOnlyCorrect = showOnlyCorrectCheckbox
+    ? showOnlyCorrectCheckbox.checked
+    : true;
+  if (showOnlyCorrect) {
+    // Show only correct answer
+    html += '<div class="flashcard-answer-single">';
+    html += `<strong>${sanitizeHTML(correctAnswer)}.</strong> ${sanitizeHTML(
+      correctChoice.content
+    )} ✓`;
+    html += "</div>";
+  } else {
+    // Show all choices
+    html += '<div class="flashcard-answer-list">';
+    q.choices.forEach((choice) => {
+      const isCorrect = choice.letter === correctAnswer;
+      const itemClass = isCorrect
+        ? "flashcard-answer-item correct-answer"
+        : "flashcard-answer-item";
+      html += `<div class="${itemClass}">`;
+      html += `<strong>${sanitizeHTML(choice.letter)}.</strong> ${sanitizeHTML(
+        choice.content
+      )}`;
+      if (isCorrect) {
+        html += " ✓";
+      }
+      html += "</div>";
+    });
+    html += "</div>";
+  }
+
+  html += "</div>";
+  html += '<div class="flashcard-hint">Click to see question</div>';
+  html += "</div>";
+
+  html += "</div></div>";
+
+  // Add keyboard shortcuts info
+  html += '<div class="keyboard-shortcuts">';
+  html += "<strong>Keyboard shortcuts:</strong> ";
+  html += "← → to navigate | ↑ ↓ to flip card";
+  html += "</div>";
+
+  els.questionContainer.innerHTML = html;
+
+  // Update navigation buttons
+  els.prevBtn.disabled = currentQuestion === 0;
+
+  if (currentQuestion === totalQuestions - 1) {
+    els.nextBtn.classList.add("hidden");
+    els.submitBtn.classList.remove("hidden");
+  } else {
+    els.nextBtn.classList.remove("hidden");
+    els.submitBtn.classList.add("hidden");
+  }
+
+  // Add listener for toggle change to re-render
+  const toggleCheckbox = document.getElementById("showOnlyCorrect");
+  if (toggleCheckbox) {
+    toggleCheckbox.removeEventListener("change", renderFlashcard);
+    toggleCheckbox.addEventListener("change", renderFlashcard);
+  }
+}
+
+// Toggle flashcard flip
+function toggleFlashcard() {
+  isFlipped = !isFlipped;
+  const flashcard = document.querySelector(".flashcard");
+  if (flashcard) {
+    if (isFlipped) {
+      flashcard.classList.add("flipped");
+    } else {
+      flashcard.classList.remove("flipped");
+    }
+  }
 }
 
 // Render question
 function renderQuestion() {
   const q = testSession.questions[currentQuestion];
   const totalQuestions = testSession.questions.length;
+
+  // Reset flip state when changing questions in flashcard mode
+  if (testSession.config.mode === "flashcard") {
+    isFlipped = false;
+    renderFlashcard();
+    return;
+  }
 
   // Update progress
   els.questionProgress.textContent = `Question ${
@@ -375,9 +554,11 @@ function renderQuestion() {
     ((currentQuestion + 1) / totalQuestions) * 100
   }%`;
 
-  // Update answered count
-  const answeredCount = Object.keys(userAnswers).length;
-  els.answeredCount.textContent = `Answered: ${answeredCount} / ${totalQuestions}`;
+  // Hide flashcard toggle in regular mode
+  const flashcardToggle = document.getElementById("flashcardToggle");
+  if (flashcardToggle) {
+    flashcardToggle.classList.add("hidden");
+  }
 
   // Build question HTML
   let html = `<div class="question-text">${sanitizeHTML(q.text)}</div>`;
@@ -552,7 +733,13 @@ els.prevBtn.addEventListener("click", () => {
 
   if (currentQuestion > 0) {
     currentQuestion--;
-    renderQuestion();
+    isFlipped = false;
+    if (testSession.config.mode === "flashcard") {
+      renderFlashcard();
+    } else {
+      renderQuestion();
+    }
+    renderQuestionGrid();
   }
 });
 
@@ -569,15 +756,36 @@ els.nextBtn.addEventListener("click", () => {
 
   if (currentQuestion < testSession.questions.length - 1) {
     currentQuestion++;
-    renderQuestion();
+    isFlipped = false;
+    if (testSession.config.mode === "flashcard") {
+      renderFlashcard();
+    } else {
+      renderQuestion();
+    }
+    renderQuestionGrid();
   }
 });
 
 els.submitBtn.addEventListener("click", () => {
-  submitTest();
+  if (testSession.config.mode === "flashcard") {
+    // In flashcard mode, just exit to home without showing results
+    if (confirm("Are you sure you want to exit flashcard mode?")) {
+      window.location.href = "index.html";
+    }
+  } else {
+    submitTest();
+  }
 });
 
 els.exitBtn.addEventListener("click", () => {
+  if (testSession.config.mode === "flashcard") {
+    // In flashcard mode, just exit to home
+    if (confirm("Are you sure you want to exit flashcard mode?")) {
+      window.location.href = "index.html";
+    }
+    return;
+  }
+
   const answeredCount = Object.keys(userAnswers).length;
   const totalQuestions = testSession.questions.length;
   const unanswered = totalQuestions - answeredCount;
@@ -629,6 +837,9 @@ function submitTest() {
     date: new Date().toISOString(),
   };
 
+  // Auto-save result to database
+  saveResultToDatabase(result);
+
   showResult(result);
 }
 
@@ -646,73 +857,208 @@ function showResult(result) {
   els.percentValue.textContent = `${result.percent}%`;
   els.durationValue.textContent = result.duration;
 
-  // Build details list
-  let detailsHTML = "";
-  result.details.forEach((detail, idx) => {
-    const className = detail.isCorrect ? "correct" : "incorrect";
-    const status = detail.isCorrect
-      ? "✓ Correct"
-      : `✗ Wrong (Selected: ${detail.userAnswer} Correct: ${detail.correctAnswer})`;
-    detailsHTML += `
-      <div class="detail-item ${className}">
-        <strong>Q${idx + 1}:</strong> ${status}
-      </div>
-    `;
-  });
-  els.detailsList.innerHTML = detailsHTML;
+  // Store all result details for filtering
+  allResultDetails = result.details;
+
+  // Update filter counts
+  const correctCount = result.details.filter((d) => d.isCorrect).length;
+  const incorrectCount = result.details.filter((d) => !d.isCorrect).length;
+  els.countAll.textContent = result.total;
+  els.countCorrect.textContent = correctCount;
+  els.countIncorrect.textContent = incorrectCount;
+
+  // Reset filter to 'all'
+  currentFilter = "all";
+  updateFilterButtons();
+  renderFilteredResults();
 
   // Hide test section and show result modal
   els.testSection.classList.add("hidden");
   els.resultModal.classList.remove("hidden");
 
+  // Change Save button to Start New Test
+  els.saveBtn.textContent = "🚀 Start New Test";
+  els.saveBtn.style.display = "block";
+  els.saveBtn.disabled = false;
+  els.saveBtn.style.opacity = "1";
+  els.saveBtn.style.cursor = "pointer";
+  els.saveBtn.onclick = () => {
+    window.location.href = "index.html";
+  };
+
   // Store result for saving
   window.currentResult = result;
 }
 
-// Save markdown
-els.saveBtn.addEventListener("click", () => {
-  const result = window.currentResult;
-  if (!result) return;
+// Auto-save result to database
+async function saveResultToDatabase(result) {
+  try {
+    // Prepare result data for database with full questions
+    const resultData = {
+      quizName: testSession.fileName,
+      mode: testSession.config.mode,
+      score: result.score,
+      total: result.total,
+      percent: result.percent,
+      durationSeconds: result.durationSeconds,
+      date: result.date,
+      details: result.details,
+      questions: testSession.questions, // Save full questions for viewing later
+      config: testSession.config,
+    };
 
-  let md = `# Quiz Result\n`;
-  md += `- quizTitle: ${testSession.fileName}\n`;
-  md += `- date: ${result.date}\n`;
-  md += `- mode: ${testSession.config.mode}\n`;
-  md += `- duration: ${result.duration}\n`;
-  md += `- questionsCount: ${result.total}\n`;
-  md += `- score: ${result.score}/${result.total}\n`;
-  md += `- percent: ${result.percent}%\n\n`;
+    // Save to IndexedDB
+    await quizDB.saveResult(resultData);
+    showToast("✅ Result saved successfully!", "success");
+  } catch (err) {
+    console.error("Failed to save result:", err);
+    showToast("❌ Failed to save result", "error");
+  }
+}
 
-  md += `## Answers\n`;
-  result.details.forEach((d, idx) => {
-    const status = d.isCorrect ? "✅" : "❌";
-    const correctInfo = d.isCorrect ? "" : ` (correct: "${d.correctAnswer}")`;
-    md += `${idx + 1}. Question ${idx + 1} — selected: "${d.userAnswer}" — ${
-      d.isCorrect ? "correct" : "incorrect"
-    } ${status}${correctInfo}\n`;
+// Toast notification function
+function showToast(message, type = "info") {
+  const toast = document.getElementById("toast");
+  if (!toast) return;
+
+  toast.textContent = message;
+  toast.className = `toast toast-${type}`;
+  toast.classList.remove("hidden");
+
+  setTimeout(() => {
+    toast.classList.add("hidden");
+  }, 3000);
+}
+
+// Show saved result (when viewing from history)
+function showSavedResult(result) {
+  // Hide config and test sections
+  els.configModal.classList.add("hidden");
+  els.testSection.classList.add("hidden");
+
+  // Set up testSession with saved questions for detail viewing
+  testSession = {
+    questions: result.questions || [],
+    fileName: result.quizName,
+    config: result.config || {},
+  };
+
+  // Populate result modal
+  populateResultModal(result, true);
+
+  // Change button text to "Start New Test"
+  els.saveBtn.textContent = "🚀 Start New Test";
+  els.saveBtn.style.display = "block";
+  els.saveBtn.onclick = () => {
+    window.location.href = "index.html";
+  };
+
+  // Show result modal
+  els.resultModal.classList.remove("hidden");
+}
+
+// Populate result modal with data
+function populateResultModal(result, isSavedResult = false) {
+  const passed = result.percent >= 72;
+
+  // Icon and title
+  els.resultIcon.textContent = passed ? "✅" : "❌";
+  els.resultTitle.textContent = passed
+    ? "Congratulations!"
+    : "Keep Practicing!";
+  els.resultSubtitle.textContent = "Test completed";
+
+  // Stats
+  els.scoreValue.textContent = `${result.score}/${result.total}`;
+  els.percentValue.textContent = `${result.percent.toFixed(1)}%`;
+
+  // Duration
+  const duration = formatDurationFromSeconds(result.durationSeconds);
+  els.durationValue.textContent = duration;
+
+  // Store all result details for filtering
+  allResultDetails = result.details;
+
+  // Details list
+  renderResultDetails(result.details, isSavedResult);
+
+  // Update filter counts
+  updateFilterCounts(result.details);
+}
+
+// Format duration from seconds (HH:MM:SS)
+function formatDurationFromSeconds(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(
+    s
+  ).padStart(2, "0")}`;
+}
+
+// Render result details list
+function renderResultDetails(details, isSavedResult = false) {
+  let html = "";
+  if (details.length === 0) {
+    html =
+      '<div class="empty-filter-state">No questions match this filter</div>';
+  } else {
+    details.forEach((detail) => {
+      const statusClass = detail.isCorrect ? "correct" : "incorrect";
+      const status = detail.isCorrect
+        ? "✓ Correct"
+        : `✗ Wrong (Selected: ${detail.userAnswer}, Correct: ${detail.correctAnswer})`;
+
+      html += `
+        <div class="detail-item ${statusClass}" data-question-index="${
+        detail.questionIndex
+      }">
+          <strong>Q${detail.questionIndex + 1}:</strong> ${status}
+        </div>
+      `;
+    });
+  }
+
+  els.detailsList.innerHTML = html;
+
+  // Add click handlers to view question details
+  document.querySelectorAll(".detail-item").forEach((item) => {
+    const questionIndex = parseInt(item.dataset.questionIndex);
+    if (!isNaN(questionIndex)) {
+      item.style.cursor = "pointer";
+      item.addEventListener("click", () => {
+        if (
+          testSession &&
+          testSession.questions &&
+          testSession.questions[questionIndex]
+        ) {
+          showQuestionDetail(questionIndex);
+        } else {
+          showToast("Question data not available", "error");
+        }
+      });
+    }
   });
+}
 
-  md += `\n## Raw\n`;
-  md += `- JSON source file: ${testSession.fileName}\n`;
-  md += `- config: ${JSON.stringify(testSession.config)}\n\n`;
-  md += `---\n`;
+// Update filter counts
+function updateFilterCounts(details) {
+  const total = details.length;
+  const correct = details.filter((d) => d.isCorrect).length;
+  const incorrect = total - correct;
 
-  // Download
-  const blob = new Blob([md], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  const dateStr = new Date()
-    .toISOString()
-    .replace(/:/g, "-")
-    .split(".")[0]
-    .replace("T", "-");
-  a.download = `quiz-result-${dateStr}.md`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-});
+  document.getElementById("countAll").textContent = total;
+  document.getElementById("countCorrect").textContent = correct;
+  document.getElementById("countIncorrect").textContent = incorrect;
+}
+
+// Utility to escape HTML
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 // Back to home
 els.newTestBtn.addEventListener("click", () => {
@@ -723,8 +1069,231 @@ els.newTestBtn.addEventListener("click", () => {
   testStartTime = null;
   clearInterval(timerInterval);
 
+  // Hide question grid and remove sidebar class
+  els.questionGrid.classList.add("hidden");
+  document.querySelector(".container").classList.remove("has-sidebar");
+
   // Redirect to home page
   window.location.href = "index.html";
+});
+
+// Update filter buttons active state
+function updateFilterButtons() {
+  els.filterAll.classList.toggle("active", currentFilter === "all");
+  els.filterCorrect.classList.toggle("active", currentFilter === "correct");
+  els.filterIncorrect.classList.toggle("active", currentFilter === "incorrect");
+}
+
+// Render filtered results
+function renderFilteredResults() {
+  let filteredDetails = allResultDetails;
+
+  if (currentFilter === "correct") {
+    filteredDetails = allResultDetails.filter((d) => d.isCorrect);
+  } else if (currentFilter === "incorrect") {
+    filteredDetails = allResultDetails.filter((d) => !d.isCorrect);
+  }
+
+  let detailsHTML = "";
+  if (filteredDetails.length === 0) {
+    detailsHTML =
+      '<div class="empty-filter-state">No questions match this filter</div>';
+  } else {
+    filteredDetails.forEach((detail) => {
+      const className = detail.isCorrect ? "correct" : "incorrect";
+      const status = detail.isCorrect
+        ? "✓ Correct"
+        : `✗ Wrong (Selected: ${detail.userAnswer}, Correct: ${detail.correctAnswer})`;
+      detailsHTML += `
+        <div class="detail-item ${className}" data-question-index="${
+        detail.questionIndex
+      }">
+          <strong>Q${detail.questionIndex + 1}:</strong> ${status}
+        </div>
+      `;
+    });
+  }
+  els.detailsList.innerHTML = detailsHTML;
+
+  // Add click listeners to detail items
+  document.querySelectorAll(".detail-item").forEach((item) => {
+    const questionIndex = parseInt(item.dataset.questionIndex);
+    if (!isNaN(questionIndex)) {
+      item.style.cursor = "pointer";
+      item.addEventListener("click", () => {
+        showQuestionDetail(questionIndex);
+      });
+    }
+  });
+}
+
+// Filter button event listeners
+els.filterAll.addEventListener("click", () => {
+  currentFilter = "all";
+  updateFilterButtons();
+  renderFilteredResults();
+});
+
+els.filterCorrect.addEventListener("click", () => {
+  currentFilter = "correct";
+  updateFilterButtons();
+  renderFilteredResults();
+});
+
+els.filterIncorrect.addEventListener("click", () => {
+  currentFilter = "incorrect";
+  updateFilterButtons();
+  renderFilteredResults();
+});
+
+// Show question detail in popup
+function showQuestionDetail(questionIndex) {
+  const q = testSession.questions[questionIndex];
+  const detail = allResultDetails[questionIndex];
+  const correctChoice = q.choices.find((c) => c.is_correct);
+  const correctAnswer = correctChoice ? correctChoice.letter : null;
+
+  let html = `<h2 class="question-detail-title">Question ${
+    questionIndex + 1
+  }</h2>`;
+  html += `<div class="question-detail-text">${sanitizeHTML(q.text)}</div>`;
+
+  // Add question images
+  if (q.question_images && q.question_images.length > 0) {
+    html += '<div class="question-detail-images">';
+    q.question_images.forEach((img) => {
+      html += `<img src="${sanitizeHTML(img)}" alt="Question image">`;
+    });
+    html += "</div>";
+  }
+
+  // Add choices
+  html += '<div class="question-detail-choices">';
+  q.choices.forEach((choice) => {
+    const isSelected = detail.userAnswer === choice.letter;
+    const isCorrect = choice.letter === correctAnswer;
+
+    let choiceClass = "question-detail-choice";
+    if (isSelected && isCorrect) {
+      choiceClass += " choice-correct";
+    } else if (isSelected && !isCorrect) {
+      choiceClass += " choice-incorrect";
+    } else if (isCorrect) {
+      choiceClass += " choice-correct-answer";
+    }
+
+    html += `<div class="${choiceClass}">`;
+    html += `<span class="choice-letter">${sanitizeHTML(
+      choice.letter
+    )}.</span> `;
+    html += `<span class="choice-content">${sanitizeHTML(
+      choice.content
+    )}</span>`;
+
+    if (isSelected && isCorrect) {
+      html +=
+        ' <span class="choice-badge badge-correct">✓ Your answer (Correct)</span>';
+    } else if (isSelected && !isCorrect) {
+      html +=
+        ' <span class="choice-badge badge-incorrect">✗ Your answer (Wrong)</span>';
+    } else if (isCorrect) {
+      html +=
+        ' <span class="choice-badge badge-answer">✓ Correct Answer</span>';
+    }
+
+    if (choice.has_images && choice.images && choice.images.length > 0) {
+      html += '<div class="choice-images">';
+      choice.images.forEach((img) => {
+        html += `<img src="${sanitizeHTML(img)}" alt="Choice ${
+          choice.letter
+        }">`;
+      });
+      html += "</div>";
+    }
+
+    html += "</div>";
+  });
+  html += "</div>";
+
+  // Add result summary
+  const resultClass = detail.isCorrect ? "result-correct" : "result-incorrect";
+  const resultIcon = detail.isCorrect ? "✓" : "✗";
+  const resultText = detail.isCorrect
+    ? "You answered this question correctly!"
+    : `You answered incorrectly. You selected ${detail.userAnswer}, but the correct answer is ${correctAnswer}.`;
+  html += `<div class="question-detail-result ${resultClass}">${resultIcon} ${resultText}</div>`;
+
+  els.questionDetailContainer.innerHTML = html;
+  els.questionDetailModal.classList.remove("hidden");
+}
+
+// Close question detail modal
+els.closeQuestionDetail.addEventListener("click", () => {
+  els.questionDetailModal.classList.add("hidden");
+});
+
+// Close modal when clicking outside
+els.questionDetailModal.addEventListener("click", (e) => {
+  if (e.target === els.questionDetailModal) {
+    els.questionDetailModal.classList.add("hidden");
+  }
+});
+
+// Keyboard navigation
+document.addEventListener("keydown", (e) => {
+  // Close question detail modal with Escape key
+  if (
+    e.key === "Escape" &&
+    !els.questionDetailModal.classList.contains("hidden")
+  ) {
+    els.questionDetailModal.classList.add("hidden");
+    return;
+  }
+
+  // Only handle keyboard shortcuts when test is active
+  if (!testSession || els.testSection.classList.contains("hidden")) {
+    return;
+  }
+
+  const isFlashcardMode = testSession.config.mode === "flashcard";
+
+  switch (e.key) {
+    case "ArrowLeft":
+      e.preventDefault();
+      if (currentQuestion > 0) {
+        currentQuestion--;
+        isFlipped = false;
+        if (isFlashcardMode) {
+          renderFlashcard();
+        } else {
+          renderQuestion();
+        }
+        renderQuestionGrid();
+      }
+      break;
+
+    case "ArrowRight":
+      e.preventDefault();
+      if (currentQuestion < testSession.questions.length - 1) {
+        currentQuestion++;
+        isFlipped = false;
+        if (isFlashcardMode) {
+          renderFlashcard();
+        } else {
+          renderQuestion();
+        }
+        renderQuestionGrid();
+      }
+      break;
+
+    case "ArrowUp":
+    case "ArrowDown":
+      if (isFlashcardMode) {
+        e.preventDefault();
+        toggleFlashcard();
+      }
+      break;
+  }
 });
 
 // Initialize app when page loads
