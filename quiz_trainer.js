@@ -89,6 +89,30 @@ function formatTime(seconds) {
     .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
+// Utility: Parse voting information from correct_answer field
+function parseVotingInfo(correctAnswerStr) {
+  try {
+    if (!correctAnswerStr) return null;
+    const parsed = JSON.parse(correctAnswerStr);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Utility: Get correct answer(s) from question
+function getCorrectAnswers(question) {
+  // Get correct answers from is_correct flag in choices
+  const correctChoices = question.choices.filter(c => c.is_correct);
+  return correctChoices.map(c => c.letter);
+}
+
+// Utility: Check if question has multiple correct answers
+function hasMultipleCorrectAnswers(question) {
+  const correctAnswers = getCorrectAnswers(question);
+  return correctAnswers.length > 1;
+}
+
 // Show error
 function showError(message) {
   els.errorMsg.textContent = message;
@@ -383,9 +407,8 @@ function renderQuestionGrid() {
     }
 
     const isActive = i === currentQuestion ? "active" : "";
-    html += `<div class="question-grid-item ${statusClass} ${isActive}" data-question="${i}">${
-      i + 1
-    }</div>`;
+    html += `<div class="question-grid-item ${statusClass} ${isActive}" data-question="${i}">${i + 1
+      }</div>`;
   }
 
   html += "</div>";
@@ -413,12 +436,10 @@ function renderFlashcard() {
   const totalQuestions = testSession.questions.length;
 
   // Update progress
-  els.questionProgress.textContent = `Card ${
-    currentQuestion + 1
-  } of ${totalQuestions}`;
-  els.progressFill.style.width = `${
-    ((currentQuestion + 1) / totalQuestions) * 100
-  }%`;
+  els.questionProgress.textContent = `Card ${currentQuestion + 1
+    } of ${totalQuestions}`;
+  els.progressFill.style.width = `${((currentQuestion + 1) / totalQuestions) * 100
+    }%`;
 
   // Hide submit answer button and answered count in flashcard mode
   els.submitAnswerBtn.classList.add("hidden");
@@ -428,13 +449,12 @@ function renderFlashcard() {
   flashcardToggle.classList.remove("hidden");
 
   // Build flashcard HTML
-  const correctChoice = q.choices.find((c) => c.is_correct);
-  const correctAnswer = correctChoice ? correctChoice.letter : null;
+  const correctAnswers = getCorrectAnswers(q);
+  const votingInfo = parseVotingInfo(q.correct_answer);
 
   let html = '<div class="flashcard-container">';
-  html += `<div class="flashcard ${
-    isFlipped ? "flipped" : ""
-  }" onclick="toggleFlashcard()">`;
+  html += `<div class="flashcard ${isFlipped ? "flipped" : ""
+    }" onclick="toggleFlashcard()">`;
 
   // Front of card (Question)
   html += '<div class="flashcard-face flashcard-front">';
@@ -462,17 +482,23 @@ function renderFlashcard() {
     ? showOnlyCorrectCheckbox.checked
     : true;
   if (showOnlyCorrect) {
-    // Show only correct answer
+    // Show only correct answer(s)
     html += '<div class="flashcard-answer-single">';
-    html += `<strong>${sanitizeHTML(correctAnswer)}.</strong> ${sanitizeHTML(
-      correctChoice.content
-    )} ✓`;
+    correctAnswers.forEach((letter, index) => {
+      const correctChoice = q.choices.find(c => c.letter === letter);
+      if (correctChoice) {
+        if (index > 0) html += '<br><br>';
+        html += `<strong>${sanitizeHTML(letter)}.</strong> ${sanitizeHTML(
+          correctChoice.content
+        )} ✓`;
+      }
+    });
     html += "</div>";
   } else {
     // Show all choices
     html += '<div class="flashcard-answer-list">';
     q.choices.forEach((choice) => {
-      const isCorrect = choice.letter === correctAnswer;
+      const isCorrect = correctAnswers.includes(choice.letter);
       const itemClass = isCorrect
         ? "flashcard-answer-item correct-answer"
         : "flashcard-answer-item";
@@ -484,6 +510,18 @@ function renderFlashcard() {
         html += " ✓";
       }
       html += "</div>";
+    });
+    html += "</div>";
+  }
+
+  // Show voting information if available
+  if (votingInfo && votingInfo.length > 0) {
+    html += '<div class="voting-info">';
+    html += '<strong>Community Votes:</strong><br>';
+    votingInfo.forEach((vote, idx) => {
+      const badge = vote.is_most_voted ? '🏆' : '';
+      html += `${badge} ${vote.voted_answers}: ${vote.vote_count} vote${vote.vote_count > 1 ? 's' : ''}`;
+      if (idx < votingInfo.length - 1) html += '<br>';
     });
     html += "</div>";
   }
@@ -547,12 +585,10 @@ function renderQuestion() {
   }
 
   // Update progress
-  els.questionProgress.textContent = `Question ${
-    currentQuestion + 1
-  } of ${totalQuestions}`;
-  els.progressFill.style.width = `${
-    ((currentQuestion + 1) / totalQuestions) * 100
-  }%`;
+  els.questionProgress.textContent = `Question ${currentQuestion + 1
+    } of ${totalQuestions}`;
+  els.progressFill.style.width = `${((currentQuestion + 1) / totalQuestions) * 100
+    }%`;
 
   // Hide flashcard toggle in regular mode
   const flashcardToggle = document.getElementById("flashcardToggle");
@@ -561,7 +597,15 @@ function renderQuestion() {
   }
 
   // Build question HTML
+  const isMultipleAnswer = hasMultipleCorrectAnswers(q);
+  const inputType = isMultipleAnswer ? "checkbox" : "radio";
+
   let html = `<div class="question-text">${sanitizeHTML(q.text)}</div>`;
+
+  // Add hint for multiple answer questions
+  if (isMultipleAnswer) {
+    html += '<div class="multiple-answer-hint">⚠️ This question has multiple correct answers. Select all that apply.</div>';
+  }
 
   // Add question images
   if (q.question_images && q.question_images.length > 0) {
@@ -575,13 +619,17 @@ function renderQuestion() {
   // Add choices
   const isPracticeMode = testSession.config.mode === "practice";
   const isAnswered = questionResults.hasOwnProperty(currentQuestion);
-  const correctChoice = q.choices.find((c) => c.is_correct);
-  const correctAnswer = correctChoice ? correctChoice.letter : null;
+  const correctAnswers = getCorrectAnswers(q);
+  const votingInfo = parseVotingInfo(q.correct_answer);
 
   html += '<div class="choices">';
   q.choices.forEach((choice) => {
-    const isSelected = userAnswers[currentQuestion] === choice.letter;
-    const isCorrect = choice.letter === correctAnswer;
+    const userAnswer = userAnswers[currentQuestion];
+    // Handle both single answer (string) and multiple answers (array)
+    const isSelected = isMultipleAnswer
+      ? (Array.isArray(userAnswer) && userAnswer.includes(choice.letter))
+      : (userAnswer === choice.letter);
+    const isCorrect = correctAnswers.includes(choice.letter);
 
     let choiceClass = "";
     if (isPracticeMode && isAnswered) {
@@ -597,14 +645,13 @@ function renderQuestion() {
     }
 
     const disabled = isPracticeMode && isAnswered ? "disabled" : "";
+    const inputName = isMultipleAnswer ? `current-question-${currentQuestion}` : "current-question";
 
     html += `
-      <div class="choice ${choiceClass}" data-letter="${choice.letter}" ${
-      disabled ? 'style="pointer-events: none;"' : ""
-    }>
-        <input type="radio" name="current-question" value="${choice.letter}" ${
-      isSelected ? "checked" : ""
-    } ${disabled}>
+      <div class="choice ${choiceClass}" data-letter="${choice.letter}" ${disabled ? 'style="pointer-events: none;"' : ""
+      }>
+        <input type="${inputType}" name="${inputName}" value="${choice.letter}" ${isSelected ? "checked" : ""
+      } ${disabled}>
         <span class="choice-letter">${sanitizeHTML(choice.letter)}</span>
         <span class="choice-content">${sanitizeHTML(choice.content)}</span>
     `;
@@ -612,9 +659,8 @@ function renderQuestion() {
     if (choice.has_images && choice.images && choice.images.length > 0) {
       html += '<div class="choice-images">';
       choice.images.forEach((img) => {
-        html += `<img src="${sanitizeHTML(img)}" alt="Choice ${
-          choice.letter
-        }">`;
+        html += `<img src="${sanitizeHTML(img)}" alt="Choice ${choice.letter
+          }">`;
       });
       html += "</div>";
     }
@@ -630,10 +676,25 @@ function renderQuestion() {
       ? "feedback-correct"
       : "feedback-incorrect";
     const feedbackIcon = wasCorrect ? "✓" : "✗";
+    const correctAnswerText = correctAnswers.length > 1
+      ? correctAnswers.join(", ")
+      : correctAnswers[0];
     const feedbackText = wasCorrect
       ? "Correct!"
-      : `Incorrect. The correct answer is ${correctAnswer}.`;
+      : `Incorrect. The correct answer${correctAnswers.length > 1 ? 's are' : ' is'} ${correctAnswerText}.`;
     html += `<div class="answer-feedback ${feedbackClass}">${feedbackIcon} ${feedbackText}</div>`;
+
+    // Show voting information if available
+    if (votingInfo && votingInfo.length > 0) {
+      html += '<div class="voting-info-practice">';
+      html += '<strong>📊 Community Votes:</strong><br>';
+      votingInfo.forEach((vote, idx) => {
+        const badge = vote.is_most_voted ? ' 🏆' : '';
+        html += `${vote.voted_answers}: ${vote.vote_count} vote${vote.vote_count > 1 ? 's' : ''}${badge}`;
+        if (idx < votingInfo.length - 1) html += ' | ';
+      });
+      html += "</div>";
+    }
   }
 
   els.questionContainer.innerHTML = html;
@@ -683,8 +744,33 @@ function selectAnswer(letter) {
     return;
   }
 
-  // Save the selected answer
-  userAnswers[currentQuestion] = letter;
+  const q = testSession.questions[currentQuestion];
+  const isMultipleAnswer = hasMultipleCorrectAnswers(q);
+
+  if (isMultipleAnswer) {
+    // Handle multiple selection with checkbox
+    let currentAnswers = userAnswers[currentQuestion];
+    if (!Array.isArray(currentAnswers)) {
+      currentAnswers = [];
+    }
+
+    const index = currentAnswers.indexOf(letter);
+    if (index > -1) {
+      // Remove if already selected
+      currentAnswers.splice(index, 1);
+    } else {
+      // Add if not selected
+      currentAnswers.push(letter);
+    }
+
+    // Sort answers alphabetically
+    currentAnswers.sort();
+
+    userAnswers[currentQuestion] = currentAnswers.length > 0 ? currentAnswers : undefined;
+  } else {
+    // Handle single selection with radio
+    userAnswers[currentQuestion] = letter;
+  }
 
   // In timed mode, update grid immediately
   if (!isPracticeMode) {
@@ -704,10 +790,20 @@ function submitCurrentAnswer() {
 
   // Check if answer is correct
   const q = testSession.questions[currentQuestion];
-  const correctChoice = q.choices.find((c) => c.is_correct);
-  const correctAnswer = correctChoice ? correctChoice.letter : null;
-  questionResults[currentQuestion] =
-    userAnswers[currentQuestion] === correctAnswer;
+  const correctAnswers = getCorrectAnswers(q);
+  const userAnswer = userAnswers[currentQuestion];
+
+  let isCorrect = false;
+  if (Array.isArray(userAnswer)) {
+    // Multiple answers: check if arrays match
+    isCorrect = userAnswer.length === correctAnswers.length &&
+      userAnswer.every(a => correctAnswers.includes(a));
+  } else {
+    // Single answer: check if it matches
+    isCorrect = correctAnswers.length === 1 && correctAnswers[0] === userAnswer;
+  }
+
+  questionResults[currentQuestion] = isCorrect;
 
   // Update question grid and re-render
   renderQuestionGrid();
@@ -792,9 +888,8 @@ els.exitBtn.addEventListener("click", () => {
 
   let message = "Are you sure you want to submit the test?";
   if (unanswered > 0) {
-    message += `\n\nYou have ${unanswered} unanswered question${
-      unanswered > 1 ? "s" : ""
-    }. They will be marked as incorrect.`;
+    message += `\n\nYou have ${unanswered} unanswered question${unanswered > 1 ? "s" : ""
+      }. They will be marked as incorrect.`;
   }
 
   if (confirm(message)) {
@@ -811,18 +906,31 @@ function submitTest() {
 
   let correct = 0;
   const details = testSession.questions.map((q, idx) => {
-    const userAnswer = userAnswers[idx] || "Not answered";
-    const correctChoice = q.choices.find((c) => c.is_correct);
-    const correctAnswer = correctChoice ? correctChoice.letter : "Unknown";
-    const isCorrect = userAnswer === correctAnswer;
+    const userAnswer = userAnswers[idx];
+    const correctAnswers = getCorrectAnswers(q);
+
+    // Format answers for display
+    const userAnswerDisplay = Array.isArray(userAnswer)
+      ? userAnswer.join(", ")
+      : (userAnswer || "Not answered");
+    const correctAnswerDisplay = correctAnswers.join(", ");
+
+    // Check if correct
+    let isCorrect = false;
+    if (Array.isArray(userAnswer)) {
+      isCorrect = userAnswer.length === correctAnswers.length &&
+        userAnswer.every(a => correctAnswers.includes(a));
+    } else if (userAnswer) {
+      isCorrect = correctAnswers.length === 1 && correctAnswers[0] === userAnswer;
+    }
 
     if (isCorrect) correct++;
 
     return {
       questionIndex: idx,
       questionText: q.text,
-      userAnswer,
-      correctAnswer,
+      userAnswer: userAnswerDisplay,
+      correctAnswer: correctAnswerDisplay,
       isCorrect,
     };
   });
@@ -1011,9 +1119,8 @@ function renderResultDetails(details, isSavedResult = false) {
         : `✗ Wrong (Selected: ${detail.userAnswer}, Correct: ${detail.correctAnswer})`;
 
       html += `
-        <div class="detail-item ${statusClass}" data-question-index="${
-        detail.questionIndex
-      }">
+        <div class="detail-item ${statusClass}" data-question-index="${detail.questionIndex
+        }">
           <strong>Q${detail.questionIndex + 1}:</strong> ${status}
         </div>
       `;
@@ -1105,9 +1212,8 @@ function renderFilteredResults() {
         ? "✓ Correct"
         : `✗ Wrong (Selected: ${detail.userAnswer}, Correct: ${detail.correctAnswer})`;
       detailsHTML += `
-        <div class="detail-item ${className}" data-question-index="${
-        detail.questionIndex
-      }">
+        <div class="detail-item ${className}" data-question-index="${detail.questionIndex
+        }">
           <strong>Q${detail.questionIndex + 1}:</strong> ${status}
         </div>
       `;
@@ -1150,12 +1256,11 @@ els.filterIncorrect.addEventListener("click", () => {
 function showQuestionDetail(questionIndex) {
   const q = testSession.questions[questionIndex];
   const detail = allResultDetails[questionIndex];
-  const correctChoice = q.choices.find((c) => c.is_correct);
-  const correctAnswer = correctChoice ? correctChoice.letter : null;
+  const correctAnswers = getCorrectAnswers(q);
+  const votingInfo = parseVotingInfo(q.correct_answer);
 
-  let html = `<h2 class="question-detail-title">Question ${
-    questionIndex + 1
-  }</h2>`;
+  let html = `<h2 class="question-detail-title">Question ${questionIndex + 1
+    }</h2>`;
   html += `<div class="question-detail-text">${sanitizeHTML(q.text)}</div>`;
 
   // Add question images
@@ -1170,8 +1275,12 @@ function showQuestionDetail(questionIndex) {
   // Add choices
   html += '<div class="question-detail-choices">';
   q.choices.forEach((choice) => {
-    const isSelected = detail.userAnswer === choice.letter;
-    const isCorrect = choice.letter === correctAnswer;
+    // Handle both single and multiple answers in detail.userAnswer
+    const userAnswerArray = detail.userAnswer.includes(", ")
+      ? detail.userAnswer.split(", ")
+      : [detail.userAnswer];
+    const isSelected = userAnswerArray.includes(choice.letter);
+    const isCorrect = correctAnswers.includes(choice.letter);
 
     let choiceClass = "question-detail-choice";
     if (isSelected && isCorrect) {
@@ -1204,9 +1313,8 @@ function showQuestionDetail(questionIndex) {
     if (choice.has_images && choice.images && choice.images.length > 0) {
       html += '<div class="choice-images">';
       choice.images.forEach((img) => {
-        html += `<img src="${sanitizeHTML(img)}" alt="Choice ${
-          choice.letter
-        }">`;
+        html += `<img src="${sanitizeHTML(img)}" alt="Choice ${choice.letter
+          }">`;
       });
       html += "</div>";
     }
@@ -1220,8 +1328,20 @@ function showQuestionDetail(questionIndex) {
   const resultIcon = detail.isCorrect ? "✓" : "✗";
   const resultText = detail.isCorrect
     ? "You answered this question correctly!"
-    : `You answered incorrectly. You selected ${detail.userAnswer}, but the correct answer is ${correctAnswer}.`;
+    : `You answered incorrectly. You selected ${detail.userAnswer}, but the correct answer${correctAnswers.length > 1 ? 's are' : ' is'} ${detail.correctAnswer}.`;
   html += `<div class="question-detail-result ${resultClass}">${resultIcon} ${resultText}</div>`;
+
+  // Add voting information if available
+  if (votingInfo && votingInfo.length > 0) {
+    html += '<div class="voting-info-detail">';
+    html += '<strong>📊 Community Votes:</strong><br>';
+    votingInfo.forEach((vote, idx) => {
+      const badge = vote.is_most_voted ? ' 🏆' : '';
+      html += `${vote.voted_answers}: ${vote.vote_count} vote${vote.vote_count > 1 ? 's' : ''}${badge}`;
+      if (idx < votingInfo.length - 1) html += ' | ';
+    });
+    html += "</div>";
+  }
 
   els.questionDetailContainer.innerHTML = html;
   els.questionDetailModal.classList.remove("hidden");

@@ -807,6 +807,64 @@ body {
   border: 2px solid #e74c3c;
 }
 
+/* Multiple Answer Hint */
+.multiple-answer-hint {
+  background: #fff3cd;
+  border: 2px solid #ffc107;
+  color: #856404;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 15px 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+/* Checkbox support for multiple answers */
+.choice input[type="checkbox"] {
+  margin-right: 10px;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  accent-color: #667eea;
+}
+
+.choice input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+}
+
+/* Voting Information */
+.voting-info,
+.voting-info-practice,
+.voting-info-detail {
+  margin-top: 15px;
+  padding: 12px 16px;
+  background: #e8f4f8;
+  border: 2px solid #4a90e2;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #1e3a8a;
+}
+
+.voting-info-practice {
+  margin-top: 10px;
+  text-align: center;
+}
+
+.voting-info-detail {
+  margin-top: 20px;
+  text-align: center;
+  background: #f0f9ff;
+}
+
+.voting-info strong,
+.voting-info-practice strong,
+.voting-info-detail strong {
+  color: #1e40af;
+  display: block;
+  margin-bottom: 5px;
+}
+
 /* Navigation */
 .test-navigation {
   display: flex;
