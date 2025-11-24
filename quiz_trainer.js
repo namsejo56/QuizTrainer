@@ -3,6 +3,7 @@ let questions = null;
 let fileName = "";
 let testSession = null;
 let userAnswers = {};
+let questionResults = {}; // Store if each question was answered correctly
 let currentQuestion = 0;
 let testStartTime = null;
 let timerInterval = null;
@@ -26,6 +27,7 @@ const els = {
   timer: document.getElementById("timer"),
   progressFill: document.getElementById("progressFill"),
   questionContainer: document.getElementById("questionContainer"),
+  questionGrid: document.getElementById("questionGrid"),
   answeredCount: document.getElementById("answeredCount"),
   prevBtn: document.getElementById("prevBtn"),
   nextBtn: document.getElementById("nextBtn"),
@@ -291,6 +293,7 @@ function generateTest(config) {
   };
 
   userAnswers = {};
+  questionResults = {};
   currentQuestion = 0;
   testStartTime = Date.now();
 
@@ -307,6 +310,10 @@ function generateTest(config) {
   } else {
     els.timer.classList.add("hidden");
   }
+
+  // Show question grid for both practice and timed mode
+  els.questionGrid.classList.remove("hidden");
+  renderQuestionGrid();
 
   renderQuestion();
 }
@@ -326,6 +333,53 @@ function startTimer(seconds) {
       submitTest();
     }
   }, 1000);
+}
+
+// Render question grid (for both practice and timed mode)
+function renderQuestionGrid() {
+  if (!testSession) return;
+
+  const totalQuestions = testSession.questions.length;
+  const isPracticeMode = testSession.config.mode === "practice";
+
+  let html = '<div class="question-grid-title">Questions</div>';
+  html += '<div class="question-grid-items">';
+
+  for (let i = 0; i < totalQuestions; i++) {
+    let statusClass = "unanswered";
+
+    if (isPracticeMode) {
+      // Practice mode: show correct (green), incorrect (red), unanswered (gray)
+      if (questionResults[i] === true) {
+        statusClass = "correct";
+      } else if (questionResults[i] === false) {
+        statusClass = "incorrect";
+      }
+    } else {
+      // Timed mode: show answered (green), unanswered (gray)
+      if (userAnswers.hasOwnProperty(i)) {
+        statusClass = "answered";
+      }
+    }
+
+    const isActive = i === currentQuestion ? "active" : "";
+    html += `<div class="question-grid-item ${statusClass} ${isActive}" data-question="${i}">${
+      i + 1
+    }</div>`;
+  }
+
+  html += "</div>";
+  els.questionGrid.innerHTML = html;
+
+  // Add click listeners
+  document.querySelectorAll(".question-grid-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const questionIndex = parseInt(item.dataset.question);
+      currentQuestion = questionIndex;
+      renderQuestion();
+      renderQuestionGrid();
+    });
+  });
 }
 
 // Render question
@@ -358,16 +412,38 @@ function renderQuestion() {
   }
 
   // Add choices
+  const isPracticeMode = testSession.config.mode === "practice";
+  const isAnswered = questionResults.hasOwnProperty(currentQuestion);
+  const correctChoice = q.choices.find((c) => c.is_correct);
+  const correctAnswer = correctChoice ? correctChoice.letter : null;
+
   html += '<div class="choices">';
   q.choices.forEach((choice) => {
     const isSelected = userAnswers[currentQuestion] === choice.letter;
+    const isCorrect = choice.letter === correctAnswer;
+
+    let choiceClass = "";
+    if (isPracticeMode && isAnswered) {
+      if (isSelected && isCorrect) {
+        choiceClass = "choice-correct";
+      } else if (isSelected && !isCorrect) {
+        choiceClass = "choice-incorrect";
+      } else if (isCorrect) {
+        choiceClass = "choice-correct-answer";
+      }
+    } else if (isSelected) {
+      choiceClass = "selected";
+    }
+
+    const disabled = isPracticeMode && isAnswered ? "disabled" : "";
+
     html += `
-      <div class="choice ${isSelected ? "selected" : ""}" data-letter="${
-      choice.letter
-    }">
+      <div class="choice ${choiceClass}" data-letter="${choice.letter}" ${
+      disabled ? 'style="pointer-events: none;"' : ""
+    }>
         <input type="radio" name="current-question" value="${choice.letter}" ${
       isSelected ? "checked" : ""
-    }>
+    } ${disabled}>
         <span class="choice-letter">${sanitizeHTML(choice.letter)}</span>
         <span class="choice-content">${sanitizeHTML(choice.content)}</span>
     `;
@@ -386,15 +462,33 @@ function renderQuestion() {
   });
   html += "</div>";
 
+  // Add feedback message in practice mode
+  if (isPracticeMode && isAnswered) {
+    const wasCorrect = questionResults[currentQuestion];
+    const feedbackClass = wasCorrect
+      ? "feedback-correct"
+      : "feedback-incorrect";
+    const feedbackIcon = wasCorrect ? "✓" : "✗";
+    const feedbackText = wasCorrect
+      ? "Correct!"
+      : `Incorrect. The correct answer is ${correctAnswer}.`;
+    html += `<div class="answer-feedback ${feedbackClass}">${feedbackIcon} ${feedbackText}</div>`;
+  }
+
   els.questionContainer.innerHTML = html;
 
-  // Add click listeners to choices
-  document.querySelectorAll(".choice").forEach((choiceEl) => {
-    choiceEl.addEventListener("click", () => {
-      const letter = choiceEl.dataset.letter;
-      selectAnswer(letter);
+  // Add click listeners to choices (only if not already answered in practice mode)
+  const isPractice = testSession.config.mode === "practice";
+  const alreadyAnswered = questionResults.hasOwnProperty(currentQuestion);
+
+  if (!isPractice || !alreadyAnswered) {
+    document.querySelectorAll(".choice").forEach((choiceEl) => {
+      choiceEl.addEventListener("click", () => {
+        const letter = choiceEl.dataset.letter;
+        selectAnswer(letter);
+      });
     });
-  });
+  }
 
   // Update navigation buttons
   els.prevBtn.disabled = currentQuestion === 0;
@@ -410,11 +504,28 @@ function renderQuestion() {
 
 // Select answer
 function selectAnswer(letter) {
-  userAnswers[currentQuestion] = letter;
-  renderQuestion();
-}
+  const isPracticeMode = testSession.config.mode === "practice";
 
-// Navigation
+  // In practice mode, don't allow changing answer if already answered
+  if (isPracticeMode && questionResults.hasOwnProperty(currentQuestion)) {
+    return;
+  }
+
+  userAnswers[currentQuestion] = letter;
+
+  // In practice mode, immediately check if answer is correct
+  if (isPracticeMode) {
+    const q = testSession.questions[currentQuestion];
+    const correctChoice = q.choices.find((c) => c.is_correct);
+    const correctAnswer = correctChoice ? correctChoice.letter : null;
+    questionResults[currentQuestion] = letter === correctAnswer;
+  }
+
+  // Update question grid (for both modes)
+  renderQuestionGrid();
+
+  renderQuestion();
+} // Navigation
 els.prevBtn.addEventListener("click", () => {
   if (currentQuestion > 0) {
     currentQuestion--;
@@ -574,6 +685,7 @@ els.saveBtn.addEventListener("click", () => {
 els.newTestBtn.addEventListener("click", () => {
   testSession = null;
   userAnswers = {};
+  questionResults = {};
   currentQuestion = 0;
   testStartTime = null;
   clearInterval(timerInterval);
