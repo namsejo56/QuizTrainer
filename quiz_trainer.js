@@ -11,9 +11,6 @@ let timerInterval = null;
 // DOM elements
 const els = {
   errorMsg: document.getElementById("errorMsg"),
-  importSection: document.getElementById("importSection"),
-  fileInput: document.getElementById("fileInput"),
-  fileStatus: document.getElementById("fileStatus"),
   configModal: document.getElementById("configModal"),
   numQuestions: document.getElementById("numQuestions"),
   maxQuestions: document.getElementById("maxQuestions"),
@@ -32,6 +29,7 @@ const els = {
   prevBtn: document.getElementById("prevBtn"),
   nextBtn: document.getElementById("nextBtn"),
   submitBtn: document.getElementById("submitBtn"),
+  submitAnswerBtn: document.getElementById("submitAnswerBtn"),
   exitBtn: document.getElementById("exitBtn"),
   resultModal: document.getElementById("resultModal"),
   resultIcon: document.getElementById("resultIcon"),
@@ -88,59 +86,34 @@ function showError(message) {
   }, 5000);
 }
 
-// Load JSON file
-els.fileInput.addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  els.errorMsg.classList.add("hidden");
-
+// Initialize app - load quiz data from sessionStorage
+function initApp() {
   try {
-    const text = await file.text();
-    const data = JSON.parse(text);
+    const quizData = sessionStorage.getItem("quizData");
 
-    // Validate schema
-    if (!Array.isArray(data)) {
-      throw new Error("JSON must be an array of questions");
+    if (!quizData) {
+      // No quiz data, redirect to home
+      window.location.href = "index.html";
+      return;
     }
 
-    if (data.length === 0) {
-      throw new Error("JSON file is empty");
-    }
+    const data = JSON.parse(quizData);
+    questions = data.questions;
+    fileName = data.fileName;
 
-    questions = [];
+    // Clear session storage
+    sessionStorage.removeItem("quizData");
 
-    for (let i = 0; i < data.length; i++) {
-      const q = data[i];
-      if (!q.text || !q.choices || !Array.isArray(q.choices)) {
-        console.log(
-          `Invalid question format at index ${i}: missing text or choices`
-        );
-        continue;
-      }
-      if (q.choices.length === 0) {
-        console.log(`Question at index ${i} must have at least one choice`);
-        continue;
-      }
-
-      questions.push(q);
-    }
-
-    fileName = file.name;
-
-    // Show success message
-    els.fileStatus.textContent = `✓ Loaded ${questions.length} questions from ${fileName}`;
-    els.fileStatus.classList.remove("hidden");
-
-    // Show config modal
+    // Open config modal
     openConfigModal();
   } catch (err) {
-    showError(`Failed to load JSON: ${err.message}`);
-    questions = null;
-    fileName = "";
-    els.fileStatus.classList.add("hidden");
+    console.error("Failed to load quiz data:", err);
+    showError("Failed to load quiz data");
+    setTimeout(() => {
+      window.location.href = "index.html";
+    }, 2000);
   }
-});
+}
 
 // Open config modal
 function openConfigModal() {
@@ -189,7 +162,15 @@ document
 
 // Cancel config
 els.cancelBtn.addEventListener("click", () => {
-  els.configModal.classList.add("hidden");
+  testSession = null;
+  userAnswers = {};
+  questionResults = {};
+  currentQuestion = 0;
+  testStartTime = null;
+  clearInterval(timerInterval);
+
+  // Redirect to home page
+  window.location.href = "index.html";
 });
 
 // Start test
@@ -297,9 +278,8 @@ function generateTest(config) {
   currentQuestion = 0;
   testStartTime = Date.now();
 
-  // Hide config modal and import section
+  // Hide config modal
   els.configModal.classList.add("hidden");
-  els.importSection.classList.add("hidden");
 
   // Show test section
   els.testSection.classList.remove("hidden");
@@ -493,6 +473,17 @@ function renderQuestion() {
   // Update navigation buttons
   els.prevBtn.disabled = currentQuestion === 0;
 
+  // Show/hide submit answer button in practice mode
+  const hasSelectedAnswer = userAnswers.hasOwnProperty(currentQuestion);
+
+  if (isPractice) {
+    els.submitAnswerBtn.classList.remove("hidden");
+    // Enable/disable based on whether answer is selected and not yet submitted
+    els.submitAnswerBtn.disabled = !hasSelectedAnswer || alreadyAnswered;
+  } else {
+    els.submitAnswerBtn.classList.add("hidden");
+  }
+
   if (currentQuestion === totalQuestions - 1) {
     els.nextBtn.classList.add("hidden");
     els.submitBtn.classList.remove("hidden");
@@ -506,27 +497,59 @@ function renderQuestion() {
 function selectAnswer(letter) {
   const isPracticeMode = testSession.config.mode === "practice";
 
-  // In practice mode, don't allow changing answer if already answered
+  // In practice mode, don't allow changing answer if already submitted
   if (isPracticeMode && questionResults.hasOwnProperty(currentQuestion)) {
     return;
   }
 
+  // Save the selected answer
   userAnswers[currentQuestion] = letter;
 
-  // In practice mode, immediately check if answer is correct
-  if (isPracticeMode) {
-    const q = testSession.questions[currentQuestion];
-    const correctChoice = q.choices.find((c) => c.is_correct);
-    const correctAnswer = correctChoice ? correctChoice.letter : null;
-    questionResults[currentQuestion] = letter === correctAnswer;
+  // In timed mode, update grid immediately
+  if (!isPracticeMode) {
+    renderQuestionGrid();
   }
 
-  // Update question grid (for both modes)
-  renderQuestionGrid();
-
   renderQuestion();
-} // Navigation
+}
+
+// Submit current answer (for practice mode)
+function submitCurrentAnswer() {
+  const isPracticeMode = testSession.config.mode === "practice";
+
+  if (!isPracticeMode) return;
+  if (!userAnswers[currentQuestion]) return;
+  if (questionResults.hasOwnProperty(currentQuestion)) return;
+
+  // Check if answer is correct
+  const q = testSession.questions[currentQuestion];
+  const correctChoice = q.choices.find((c) => c.is_correct);
+  const correctAnswer = correctChoice ? correctChoice.letter : null;
+  questionResults[currentQuestion] =
+    userAnswers[currentQuestion] === correctAnswer;
+
+  // Update question grid and re-render
+  renderQuestionGrid();
+  renderQuestion();
+}
+
+// Submit answer button (for practice mode)
+els.submitAnswerBtn.addEventListener("click", () => {
+  submitCurrentAnswer();
+});
+
+// Navigation
 els.prevBtn.addEventListener("click", () => {
+  // Auto-submit current answer before moving if in practice mode and answer is selected
+  const isPracticeMode = testSession.config.mode === "practice";
+  if (
+    isPracticeMode &&
+    userAnswers[currentQuestion] &&
+    !questionResults.hasOwnProperty(currentQuestion)
+  ) {
+    submitCurrentAnswer();
+  }
+
   if (currentQuestion > 0) {
     currentQuestion--;
     renderQuestion();
@@ -534,6 +557,16 @@ els.prevBtn.addEventListener("click", () => {
 });
 
 els.nextBtn.addEventListener("click", () => {
+  // Auto-submit current answer before moving if in practice mode and answer is selected
+  const isPracticeMode = testSession.config.mode === "practice";
+  if (
+    isPracticeMode &&
+    userAnswers[currentQuestion] &&
+    !questionResults.hasOwnProperty(currentQuestion)
+  ) {
+    submitCurrentAnswer();
+  }
+
   if (currentQuestion < testSession.questions.length - 1) {
     currentQuestion++;
     renderQuestion();
@@ -681,7 +714,7 @@ els.saveBtn.addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-// New test
+// Back to home
 els.newTestBtn.addEventListener("click", () => {
   testSession = null;
   userAnswers = {};
@@ -690,10 +723,11 @@ els.newTestBtn.addEventListener("click", () => {
   testStartTime = null;
   clearInterval(timerInterval);
 
-  els.resultModal.classList.add("hidden");
-  els.importSection.classList.remove("hidden");
-  els.fileStatus.classList.add("hidden");
-  els.fileInput.value = "";
-  questions = null;
-  fileName = "";
+  // Redirect to home page
+  window.location.href = "index.html";
+});
+
+// Initialize app when page loads
+document.addEventListener("DOMContentLoaded", () => {
+  initApp();
 });

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiz Trainer</title>
+  <title>Quiz Trainer - Home</title>
   <link rel="stylesheet" href="./quiz_trainer.css">
 </head>
 
@@ -24,133 +24,33 @@
       <div id="fileStatus" class="file-status hidden"></div>
     </div>
 
-    <div id="configModal" class="modal hidden">
+    <!-- Saved Quizzes List -->
+    <div id="savedQuizzesSection" class="card">
+      <h2>📚 Saved Quizzes</h2>
+      <div id="savedQuizzesList" class="saved-quizzes-list"></div>
+    </div>
+    
+    <!-- Save Quiz Modal -->
+    <div id="saveQuizModal" class="modal hidden">
       <div class="modal-content">
-        <h2>Configure Test</h2>
+        <h2>💾 Save Quiz to Database</h2>
+        <p style="color: #666; margin-bottom: 20px;">Would you like to save this quiz for quick access later?</p>
         <div class="form-group">
-          <label for="numQuestions">Number of Questions</label>
-          <input type="number" id="numQuestions" min="1" value="65">
-          <small id="maxQuestions"></small>
-        </div>
-        <div class="form-group">
-          <label>Question Selection</label>
-          <div class="radio-group">
-            <label>
-              <input type="radio" name="questionSelection" value="random" checked>
-              Random selection
-            </label>
-            <label>
-              <input type="radio" name="questionSelection" value="range">
-              Select by range
-            </label>
-          </div>
-        </div>
-        <div class="form-group" id="rangeGroup" style="display: none;">
-          <label>Question Range</label>
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <div style="flex: 1;">
-              <label for="rangeFrom" style="font-size: 12px;">From</label>
-              <input type="number" id="rangeFrom" min="1" value="1" style="width: 100%;">
-            </div>
-            <div style="flex: 1;">
-              <label for="rangeTo" style="font-size: 12px;">To</label>
-              <input type="number" id="rangeTo" min="1" value="65" style="width: 100%;">
-            </div>
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="sortOrder">Sort Order</label>
-          <select id="sortOrder" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            <option value="original">Original order</option>
-            <option value="newest">Newest first (by index)</option>
-            <option value="oldest">Oldest first (by index)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Mode</label>
-          <div class="radio-group">
-            <label>
-              <input type="radio" name="mode" value="practice" checked>
-              Practice (no timer)
-            </label>
-            <label>
-              <input type="radio" name="mode" value="timed">
-              Timed
-            </label>
-          </div>
-        </div>
-        <div class="form-group" id="timeGroup" style="display: none;">
-          <label for="timeMinutes">Time Limit (minutes)</label>
-          <input type="number" id="timeMinutes" min="1" value="60">
-        </div>
-        <div class="form-group">
-          <label>
-            <input type="checkbox" id="shuffleChoices" checked>
-            Shuffle choices
-          </label>
+          <label for="quizName">Quiz/Certificate Name</label>
+          <input type="text" id="quizName" placeholder="e.g., AWS SAA-C03, CompTIA A+..."
+            style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 1rem;">
+          <small>Give this quiz a memorable name</small>
         </div>
         <div class="modal-actions">
-          <button id="startBtn" class="btn-primary">Start Test</button>
-          <button id="cancelBtn" class="btn-secondary">Cancel</button>
-        </div>
-      </div>
+          <button id="saveQuizBtn" class="btn-primary">Save Quiz</button>
+          <button id="skipSaveBtn" class="btn-secondary">Skip</button>
+          </div>
+          </div>
+    </div>
     </div>
 
-    <div id="testSection" class="card hidden">
-      <div class="test-header">
-        <div id="questionProgress"></div>
-        <div class="test-header-right">
-          <div id="timer" class="timer hidden"></div>
-          <button id="exitBtn" class="btn-exit">Submit Test</button>
-        </div>
-      </div>
-      <div class="progress-bar">
-        <div id="progressFill" class="progress-fill"></div>
-      </div>
-      <div class="test-content-wrapper">
-        <div id="questionContainer"></div>
-        <div id="questionGrid" class="question-grid hidden"></div>
-        </div>
-      <div class="test-navigation">
-        <button id="prevBtn" class="btn-secondary">Previous</button>
-        <div id="answeredCount"></div>
-        <button id="nextBtn" class="btn-primary">Next</button>
-        <button id="submitBtn" class="btn-success hidden">Submit Test</button>
-      </div>
-    </div>
-
-    <div id="resultModal" class="modal hidden">
-      <div class="modal-content result-content">
-        <div class="result-icon" id="resultIcon"></div>
-        <h2 id="resultTitle"></h2>
-        <p id="resultSubtitle"></p>
-        <div class="result-stats">
-          <div class="stat">
-            <div class="stat-value" id="scoreValue"></div>
-            <div class="stat-label">Score</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value" id="percentValue"></div>
-            <div class="stat-label">Percentage</div>
-          </div>
-          <div class="stat full-width">
-            <div class="stat-value" id="durationValue"></div>
-            <div class="stat-label">Duration</div>
-          </div>
-        </div>
-        <div class="result-details">
-          <h3>Detailed Results:</h3>
-          <div id="detailsList"></div>
-        </div>
-        <div class="modal-actions">
-          <button id="saveBtn" class="btn-primary">Save Results</button>
-          <button id="newTestBtn" class="btn-secondary">New Test</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="quiz_trainer.js"></script>
+  <script src="db.js"></script>
+  <script src="index.js"></script>
 
 </body>
 
