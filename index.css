@@ -77,13 +77,22 @@ header p {
   color: #333;
 }
 
+.import-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
 #fileInput {
   display: block;
-  margin: 20px auto;
   padding: 10px;
   border: 2px solid #ddd;
   border-radius: 8px;
   cursor: pointer;
+  flex: 1;
+  min-width: 250px;
 }
 
 #fileInput::-webkit-file-upload-button {
@@ -275,7 +284,7 @@ header p {
 }
 
 /* Buttons */
-.btn-primary, .btn-secondary, .btn-success {
+.btn-primary, .btn-secondary, .btn-success, .btn-template {
   padding: 12px 24px;
   border: none;
   border-radius: 8px;
@@ -318,6 +327,17 @@ header p {
 .btn-success {
   background: #27ae60;
   color: white;
+}
+
+.btn-template {
+  background: #10b981;
+  color: white;
+  white-space: nowrap;
+}
+
+.btn-template:hover {
+  background: #059669;
+  transform: translateY(-2px);
 }
 
 .btn-success:hover {

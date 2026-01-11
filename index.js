@@ -19,6 +19,7 @@ const els = {
   filterQuiz: document.getElementById("filterQuiz"),
   filterStatus: document.getElementById("filterStatus"),
   toast: document.getElementById("toast"),
+  downloadTemplateBtn: document.getElementById("downloadTemplateBtn"),
 };
 
 // Show error
@@ -479,6 +480,110 @@ function showToastWithUndo(message, undoCallback) {
 // Add filter event listeners
 els.filterQuiz.addEventListener("change", applyHistoryFilters);
 els.filterStatus.addEventListener("change", applyHistoryFilters);
+
+// Download template JSON
+els.downloadTemplateBtn.addEventListener("click", () => {
+  const template = [
+    {
+      "url": "https://www.example.com/question-1",
+      "text": "Sample question text here. What is the correct answer?",
+      "choices": [
+        {
+          "letter": "A.",
+          "content": "First answer option",
+          "is_correct": true,
+          "has_images": false,
+          "images": []
+        },
+        {
+          "letter": "B.",
+          "content": "Second answer option",
+          "is_correct": false,
+          "has_images": false,
+          "images": []
+        },
+        {
+          "letter": "C.",
+          "content": "Third answer option",
+          "is_correct": false,
+          "has_images": false,
+          "images": []
+        },
+        {
+          "letter": "D.",
+          "content": "Fourth answer option",
+          "is_correct": false,
+          "has_images": false,
+          "images": []
+        }
+      ],
+      "correct_answer": "[{\"voted_answers\": \"A\", \"vote_count\": 10, \"is_most_voted\": true}]",
+      "correct_content": null,
+      "question_images": [],
+      "meta": {
+        "explain": "This is an optional explanation for the correct answer. You can provide additional context, reasoning, or details to help learners understand why this is the correct choice."
+      },
+      "exam_code": "SAMPLE-001"
+    },
+    {
+      "url": "https://www.example.com/question-2",
+      "text": "Another sample question with multiple correct answers. Which options are correct? (Choose two.)",
+      "choices": [
+        {
+          "letter": "A.",
+          "content": "First correct option",
+          "is_correct": true,
+          "has_images": false,
+          "images": []
+        },
+        {
+          "letter": "B.",
+          "content": "Incorrect option",
+          "is_correct": false,
+          "has_images": false,
+          "images": []
+        },
+        {
+          "letter": "C.",
+          "content": "Second correct option",
+          "is_correct": true,
+          "has_images": false,
+          "images": []
+        },
+        {
+          "letter": "D.",
+          "content": "Another incorrect option",
+          "is_correct": false,
+          "has_images": false,
+          "images": []
+        }
+      ],
+      "correct_answer": "[{\"voted_answers\": \"AC\", \"vote_count\": 15, \"is_most_voted\": true}, {\"voted_answers\": \"AB\", \"vote_count\": 3, \"is_most_voted\": false}]",
+      "correct_content": null,
+      "question_images": [],
+      "meta": {
+        "explain": "For multiple-answer questions, the explanation can describe why each correct option is valid and why the others are not."
+      },
+      "exam_code": "SAMPLE-001"
+    }
+  ];
+
+  // Create blob and download
+  const blob = new Blob([JSON.stringify(template, null, 2)], { 
+    type: "application/json" 
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "quiz_template.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  // Show toast notification
+  showToastNotification("✅ Template downloaded successfully!");
+});
 
 // Utility function to escape HTML
 function escapeHtml(text) {

@@ -669,21 +669,8 @@ function renderQuestion() {
   });
   html += "</div>";
 
-  // Add feedback message in practice mode
+  // Show additional information in practice mode after answering
   if (isPracticeMode && isAnswered) {
-    const wasCorrect = questionResults[currentQuestion];
-    const feedbackClass = wasCorrect
-      ? "feedback-correct"
-      : "feedback-incorrect";
-    const feedbackIcon = wasCorrect ? "✓" : "✗";
-    const correctAnswerText = correctAnswers.length > 1
-      ? correctAnswers.join(", ")
-      : correctAnswers[0];
-    const feedbackText = wasCorrect
-      ? "Correct!"
-      : `Incorrect. The correct answer${correctAnswers.length > 1 ? 's are' : ' is'} ${correctAnswerText}.`;
-    html += `<div class="answer-feedback ${feedbackClass}">${feedbackIcon} ${feedbackText}</div>`;
-
     // Show voting information if available
     if (votingInfo && votingInfo.length > 0) {
       html += '<div class="voting-info-practice">';
@@ -693,6 +680,14 @@ function renderQuestion() {
         html += `${vote.voted_answers}: ${vote.vote_count} vote${vote.vote_count > 1 ? 's' : ''}${badge}`;
         if (idx < votingInfo.length - 1) html += ' | ';
       });
+      html += "</div>";
+    }
+
+    // Show explanation if available
+    if (q.meta && q.meta.explain) {
+      html += '<div class="explanation-info">';
+      html += '<strong>💡 Explanation:</strong><br>';
+      html += sanitizeHTML(q.meta.explain);
       html += "</div>";
     }
   }
@@ -1340,6 +1335,14 @@ function showQuestionDetail(questionIndex) {
       html += `${vote.voted_answers}: ${vote.vote_count} vote${vote.vote_count > 1 ? 's' : ''}${badge}`;
       if (idx < votingInfo.length - 1) html += ' | ';
     });
+    html += "</div>";
+  }
+
+  // Add explanation if available
+  if (q.meta && q.meta.explain) {
+    html += '<div class="explanation-info-detail">';
+    html += '<strong>💡 Explanation:</strong><br>';
+    html += sanitizeHTML(q.meta.explain);
     html += "</div>";
   }
 
