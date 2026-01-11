@@ -69,9 +69,8 @@ async function loadSavedQuizzes() {
             </p>
           </div>
           <div class="quiz-actions">
-            <button class="btn-start" data-quiz-id="${
-              quiz.id
-            }">Start Quiz</button>
+            <button class="btn-start" data-quiz-id="${quiz.id
+        }">Start Quiz</button>
             <button class="btn-delete" data-quiz-id="${quiz.id}">Delete</button>
           </div>
         </div>
@@ -315,9 +314,8 @@ function renderTestHistory(results = null) {
             </span>
             <span class="history-stat">
               <span class="stat-icon">📊</span>
-              <span class="stat-text">${result.score}/${
-      result.total
-    } (${result.percent.toFixed(1)}%)</span>
+              <span class="stat-text">${result.score}/${result.total
+      } (${result.percent.toFixed(1)}%)</span>
             </span>
             <span class="history-stat">
               <span class="stat-icon">⏱️</span>
@@ -329,12 +327,10 @@ function renderTestHistory(results = null) {
             </span>            
           </div>
           <div class="history-card-actions">
-              <button class="btn-view-detail" data-result-id="${
-                result.id
-              }">View Details</button>
-              <button class="btn-delete-result" data-result-id="${
-                result.id
-              }">Delete</button>
+              <button class="btn-view-detail" data-result-id="${result.id
+      }">View Details</button>
+              <button class="btn-delete-result" data-result-id="${result.id
+      }">Delete</button>
             </div>
         </div>
       </div>
@@ -569,8 +565,8 @@ els.downloadTemplateBtn.addEventListener("click", () => {
   ];
 
   // Create blob and download
-  const blob = new Blob([JSON.stringify(template, null, 2)], { 
-    type: "application/json" 
+  const blob = new Blob([JSON.stringify(template, null, 2)], {
+    type: "application/json"
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
