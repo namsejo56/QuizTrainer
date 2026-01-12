@@ -690,6 +690,14 @@ function renderQuestion() {
       html += sanitizeHTML(q.meta.explain);
       html += "</div>";
     }
+
+    // Show correct content if available
+    if (q.correct_content) {
+      html += '<div class="correct-content-info">';
+      html += '<strong>📚 Correct Answer Details:</strong><br>';
+      html += sanitizeHTML(q.correct_content);
+      html += "</div>";
+    }
   }
 
   els.questionContainer.innerHTML = html;
@@ -1343,6 +1351,14 @@ function showQuestionDetail(questionIndex) {
     html += '<div class="explanation-info-detail">';
     html += '<strong>💡 Explanation:</strong><br>';
     html += sanitizeHTML(q.meta.explain);
+    html += "</div>";
+  }
+
+  // Add correct content if available
+  if (q.correct_content) {
+    html += '<div class="correct-content-info-detail">';
+    html += '<strong>📚 Correct Answer Details:</strong><br>';
+    html += sanitizeHTML(q.correct_content);
     html += "</div>";
   }
 

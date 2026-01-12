@@ -514,7 +514,7 @@ els.downloadTemplateBtn.addEventListener("click", () => {
         }
       ],
       "correct_answer": "[{\"voted_answers\": \"A\", \"vote_count\": 10, \"is_most_voted\": true}]",
-      "correct_content": null,
+      "correct_content": "Detailed content explanation: This field can contain comprehensive information about the correct answer, including references, documentation links, or additional learning materials.",
       "question_images": [],
       "meta": {
         "explain": "This is an optional explanation for the correct answer. You can provide additional context, reasoning, or details to help learners understand why this is the correct choice."
@@ -555,7 +555,7 @@ els.downloadTemplateBtn.addEventListener("click", () => {
         }
       ],
       "correct_answer": "[{\"voted_answers\": \"AC\", \"vote_count\": 15, \"is_most_voted\": true}, {\"voted_answers\": \"AB\", \"vote_count\": 3, \"is_most_voted\": false}]",
-      "correct_content": null,
+      "correct_content": "Both options A and C are correct because they complement each other in solving this problem. Option A provides the foundational approach while option C adds the necessary configuration.",
       "question_images": [],
       "meta": {
         "explain": "For multiple-answer questions, the explanation can describe why each correct option is valid and why the others are not."
