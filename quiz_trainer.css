@@ -17,13 +17,25 @@ body {
 .container {
   max-width: 1200px;
   margin: 0 auto;
-  padding-right: 0;
-  transition: padding-right 0.3s;
   width: 100%;
 }
 
 .container.has-sidebar {
-  padding-right: 290px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 20px;
+}
+
+.container.has-sidebar #questionGrid {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.container.has-sidebar #testSection {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  min-width: 0;
 }
 
 .card {
@@ -619,17 +631,17 @@ body {
 
 /* Question Grid Sidebar */
 .question-grid-sidebar {
-  position: fixed;
-  right: 10%;
-  top: 50%;
-  transform: translateY(-50%);
+  position: sticky;
+  top: 20px;
+  align-self: start;
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  width: 420px;
+  width: 100%;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
-  z-index: 100;
 }
 
 .question-grid-title {
@@ -642,7 +654,7 @@ body {
 
 .question-grid-items {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
   gap: 6px;
 }
 
@@ -1522,13 +1534,12 @@ body {
 @media (max-width: 1280px) {
   .question-grid-sidebar {
     position: static;
-    transform: none;
-    width: 100%;
+    max-height: min(320px, 40dvh);
     margin-bottom: 20px;
   }
 
   .container.has-sidebar {
-    padding-right: 0;
+    display: block;
   }
 }
 
@@ -1543,10 +1554,6 @@ body {
 
   .modal-content {
     padding: 20px;
-  }
-
-  .question-grid-sidebar .question-grid-items {
-    grid-template-columns: repeat(10, 1fr);
   }
 
   .result-header {
