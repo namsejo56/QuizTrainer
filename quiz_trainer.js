@@ -1,9 +1,13 @@
 // Global state
 let questions = null;
 let fileName = "";
+let quizId = null;
 let testSession = null;
 let userAnswers = {};
 let questionResults = {}; // Store if each question was answered correctly
+let mistakeQuestionKeys = new Set();
+let mistakeDecisions = {};
+let mistakeBankUpdateQueue = Promise.resolve();
 let currentQuestion = 0;
 let testStartTime = null;
 let timerInterval = null;
@@ -20,6 +24,10 @@ const els = {
   timeGroup: document.getElementById("timeGroup"),
   timeMinutes: document.getElementById("timeMinutes"),
   shuffleChoices: document.getElementById("shuffleChoices"),
+  autoRemoveMistakes: document.getElementById("autoRemoveMistakes"),
+  mistakeSettingsGroup: document.getElementById("mistakeSettingsGroup"),
+  mistakesModeCard: document.getElementById("mistakesModeCard"),
+  mistakesModeDesc: document.getElementById("mistakesModeDesc"),
   showOnlyCorrect: document.getElementById("showOnlyCorrect"),
   startBtn: document.getElementById("startBtn"),
   cancelBtn: document.getElementById("cancelBtn"),
@@ -113,6 +121,213 @@ function hasMultipleCorrectAnswers(question) {
   return correctAnswers.length > 1;
 }
 
+function hasImmediateFeedback(mode) {
+  return mode === "practice" || mode === "mistakes";
+}
+
+function isCurrentMistakeMode() {
+  return testSession && testSession.config.mode === "mistakes";
+}
+
+function shouldAutoRemoveMistakes() {
+  return isCurrentMistakeMode() && testSession.config.autoRemoveMistakes;
+}
+
+function shouldShowManualMistakeActions() {
+  return isCurrentMistakeMode() && !testSession.config.autoRemoveMistakes;
+}
+
+function hasStoredAnswerForQuestion(index) {
+  return Object.prototype.hasOwnProperty.call(userAnswers, index);
+}
+
+function hasSelectedAnswerForQuestion(index) {
+  return Boolean(userAnswers[index]);
+}
+
+function hasQuestionResult(index) {
+  return Object.prototype.hasOwnProperty.call(questionResults, index);
+}
+
+function isAnswerCorrect(userAnswer, correctAnswers) {
+  if (Array.isArray(userAnswer)) {
+    return userAnswer.length === correctAnswers.length &&
+      userAnswer.every((answer) => correctAnswers.includes(answer));
+  }
+
+  return Boolean(userAnswer) &&
+    correctAnswers.length === 1 &&
+    correctAnswers[0] === userAnswer;
+}
+
+function updateMistakeBankAfterAnswer(question, isCorrect, questionIndex) {
+  if (!isCorrect) {
+    if (shouldShowManualMistakeActions()) {
+      mistakeDecisions[questionIndex] = "review";
+    }
+    persistMistakeStatus(question, true);
+    return;
+  }
+
+  if (shouldAutoRemoveMistakes()) {
+    persistMistakeStatus(question, false);
+  }
+}
+
+function normalizeQuestionValue(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Stable across range/random selection and choice shuffling.
+function getQuestionKey(question) {
+  const sourceId = question.id ?? question.question_id ?? question.questionId;
+  if (sourceId !== undefined && sourceId !== null && sourceId !== "") {
+    return `id:${normalizeQuestionValue(sourceId)}`;
+  }
+
+  if (question.url) {
+    return `url:${normalizeQuestionValue(question.url)}`;
+  }
+
+  const canonicalQuestion = {
+    text: normalizeQuestionValue(question.text),
+    images: (question.question_images || []).map(normalizeQuestionValue),
+    choices: [...question.choices]
+      .map((choice) => ({
+        letter: normalizeQuestionValue(choice.letter),
+        content: normalizeQuestionValue(choice.content),
+        images: (choice.images || []).map(normalizeQuestionValue),
+        isCorrect: Boolean(choice.is_correct),
+      }))
+      .sort((a, b) => a.letter.localeCompare(b.letter)),
+  };
+
+  return `content:${JSON.stringify(canonicalQuestion)}`;
+}
+
+function getQuestionPool(mode) {
+  if (mode !== "mistakes") return [...questions];
+  return questions.filter((question) =>
+    mistakeQuestionKeys.has(getQuestionKey(question))
+  );
+}
+
+function renderCurrentQuestionView() {
+  if (testSession.config.mode === "flashcard") {
+    renderFlashcard();
+  } else {
+    renderQuestion();
+  }
+
+  renderQuestionGrid();
+}
+
+function updateQuestionLimits(mode) {
+  const availableCount = getQuestionPool(mode).length;
+  const maximum = Math.max(1, availableCount);
+  const defaultCount = Math.min(65, maximum);
+  const rangeFrom = document.getElementById("rangeFrom");
+  const rangeTo = document.getElementById("rangeTo");
+
+  els.numQuestions.max = maximum;
+  els.numQuestions.value = defaultCount;
+  els.maxQuestions.textContent = `(maximum: ${availableCount} questions)`;
+  rangeFrom.max = maximum;
+  rangeTo.max = maximum;
+  rangeFrom.value = 1;
+  rangeTo.value = defaultCount;
+}
+
+function updateMistakesModeAvailability() {
+  const mistakesRadio = document.querySelector('input[name="mode"][value="mistakes"]');
+  const count = mistakeQuestionKeys.size;
+  const isAvailable = Boolean(quizId) && count > 0;
+
+  mistakesRadio.disabled = !isAvailable;
+  els.mistakesModeCard.classList.toggle("is-disabled", !isAvailable);
+
+  if (!quizId) {
+    els.mistakesModeDesc.textContent = "Save this quiz to keep a mistake bank";
+  } else if (count === 0) {
+    els.mistakesModeDesc.textContent = "No mistakes to review yet";
+  } else {
+    els.mistakesModeDesc.textContent = `${count} question${count > 1 ? "s" : ""} to review`;
+  }
+}
+
+async function initializeMistakeBank() {
+  if (!quizId) return;
+
+  let bank = await quizDB.getMistakeBank(quizId);
+
+  if (!bank.version) {
+    const [results, savedQuizzes] = await Promise.all([
+      quizDB.getAllResults(),
+      quizDB.getAllQuizzes(),
+    ]);
+    const sameNameCount = savedQuizzes.filter(
+      (quiz) => quiz.name === fileName
+    ).length;
+    const currentQuestionKeys = new Set(questions.map(getQuestionKey));
+    const legacyMistakeKeys = new Set();
+
+    results.forEach((result) => {
+      const matchesById = result.quizId != null && result.quizId === quizId;
+      const matchesLegacyName = result.quizId == null &&
+        sameNameCount === 1 && result.quizName === fileName;
+
+      if (!matchesById && !matchesLegacyName) return;
+
+      (result.details || []).forEach((detail) => {
+        if (detail.isCorrect || !result.questions) return;
+        const question = result.questions[detail.questionIndex];
+        if (!question) return;
+
+        const questionKey = getQuestionKey(question);
+        if (currentQuestionKeys.has(questionKey)) {
+          legacyMistakeKeys.add(questionKey);
+        }
+      });
+    });
+
+    const initializedKeys = await quizDB.initializeMistakeBank(
+      quizId,
+      [...legacyMistakeKeys]
+    );
+    bank = { keys: initializedKeys, version: 1 };
+  }
+
+  mistakeQuestionKeys = new Set(bank.keys);
+}
+
+function persistMistakeStatus(question, needsReview) {
+  if (!quizId) return Promise.resolve();
+
+  const questionKey = getQuestionKey(question);
+  if (needsReview) {
+    mistakeQuestionKeys.add(questionKey);
+  } else {
+    mistakeQuestionKeys.delete(questionKey);
+  }
+
+  updateMistakesModeAvailability();
+  mistakeBankUpdateQueue = mistakeBankUpdateQueue
+    .then(() => quizDB.setQuestionMistakeStatus(
+      quizId,
+      questionKey,
+      needsReview
+    ))
+    .catch((err) => {
+      console.error("Failed to update mistake bank:", err);
+      showToast("Failed to update mistake bank", "error");
+    });
+
+  return mistakeBankUpdateQueue;
+}
+
 // Show error
 function showError(message) {
   els.errorMsg.textContent = message;
@@ -123,7 +338,7 @@ function showError(message) {
 }
 
 // Initialize app - load quiz data from sessionStorage or view result
-function initApp() {
+async function initApp() {
   try {
     // Check if viewing a saved result
     const viewResult = sessionStorage.getItem("viewResult");
@@ -146,9 +361,12 @@ function initApp() {
     const data = JSON.parse(quizData);
     questions = data.questions;
     fileName = data.fileName;
+    quizId = data.quizId || null;
 
     // Clear session storage
     sessionStorage.removeItem("quizData");
+
+    await initializeMistakeBank();
 
     // Open config modal
     openConfigModal();
@@ -163,17 +381,8 @@ function initApp() {
 
 // Open config modal
 function openConfigModal() {
-  els.numQuestions.value = Math.min(65, questions.length);
-  els.numQuestions.max = questions.length;
-  els.maxQuestions.textContent = `(maximum: ${questions.length} questions)`;
-
-  // Set range defaults
-  const rangeFrom = document.getElementById("rangeFrom");
-  const rangeTo = document.getElementById("rangeTo");
-  rangeFrom.max = questions.length;
-  rangeTo.max = questions.length;
-  rangeFrom.value = 1;
-  rangeTo.value = Math.min(65, questions.length);
+  updateMistakesModeAvailability();
+  updateQuestionLimits("practice");
 
   // Show range by default, hide random
   document.getElementById("rangeGroup").style.display = "flex";
@@ -183,11 +392,11 @@ function openConfigModal() {
 } // Handle mode change
 document.querySelectorAll('input[name="mode"]').forEach((radio) => {
   radio.addEventListener("change", (e) => {
-    if (e.target.value === "timed") {
-      els.timeGroup.style.display = "block";
-    } else {
-      els.timeGroup.style.display = "none";
-    }
+    const mode = e.target.value;
+    els.timeGroup.style.display = mode === "timed" ? "block" : "none";
+    els.mistakeSettingsGroup.style.display =
+      mode === "mistakes" ? "block" : "none";
+    updateQuestionLimits(mode);
   });
 });
 
@@ -235,20 +444,30 @@ els.startBtn.addEventListener("click", () => {
     'input[name="questionSelection"]:checked'
   ).value;
   const sortOrder = document.getElementById("sortOrder").value;
+  const autoRemoveMistakes = els.autoRemoveMistakes.checked;
+  const availableQuestions = getQuestionPool(mode);
+  const availableCount = availableQuestions.length;
+
+  if (availableCount === 0) {
+    alert(mode === "mistakes"
+      ? "There are no mistakes to review yet"
+      : "There are no questions available");
+    return;
+  }
 
   let rangeFrom = 1;
-  let rangeTo = questions.length;
+  let rangeTo = availableCount;
 
   if (questionSelection === "range") {
     rangeFrom = parseInt(document.getElementById("rangeFrom").value);
     rangeTo = parseInt(document.getElementById("rangeTo").value);
 
-    if (rangeFrom < 1 || rangeFrom > questions.length) {
-      alert(`"From" must be between 1 and ${questions.length}`);
+    if (rangeFrom < 1 || rangeFrom > availableCount) {
+      alert(`"From" must be between 1 and ${availableCount}`);
       return;
     }
-    if (rangeTo < 1 || rangeTo > questions.length) {
-      alert(`"To" must be between 1 and ${questions.length}`);
+    if (rangeTo < 1 || rangeTo > availableCount) {
+      alert(`"To" must be between 1 and ${availableCount}`);
       return;
     }
     if (rangeFrom > rangeTo) {
@@ -256,8 +475,8 @@ els.startBtn.addEventListener("click", () => {
       return;
     }
   } else {
-    if (numQuestions < 1 || numQuestions > questions.length) {
-      alert(`Number of questions must be between 1 and ${questions.length}`);
+    if (numQuestions < 1 || numQuestions > availableCount) {
+      alert(`Number of questions must be between 1 and ${availableCount}`);
       return;
     }
   }
@@ -276,6 +495,7 @@ els.startBtn.addEventListener("click", () => {
     rangeFrom,
     rangeTo,
     sortOrder,
+    autoRemoveMistakes,
   });
 });
 
@@ -284,7 +504,7 @@ function generateTest(config) {
   const seed = Date.now();
 
   // Sort questions if needed
-  let sortedQuestions = [...questions];
+  let sortedQuestions = getQuestionPool(config.mode);
   if (config.sortOrder === "newest") {
     sortedQuestions = sortedQuestions.reverse();
   } else if (config.sortOrder === "oldest") {
@@ -314,7 +534,7 @@ function generateTest(config) {
   if (config.shuffle) {
     selectedQuestions = selectedQuestions.map((q) => ({
       ...q,
-      choices: shuffleArray(q.choices, seed + q.url.length),
+      choices: shuffleArray(q.choices, seed + getQuestionKey(q).length),
     }));
   }
 
@@ -323,10 +543,12 @@ function generateTest(config) {
     config: { ...config, seed },
     startTime: new Date().toISOString(),
     fileName: fileName,
+    quizId: quizId,
   };
 
   userAnswers = {};
   questionResults = {};
+  mistakeDecisions = {};
   currentQuestion = 0;
   testStartTime = Date.now();
 
@@ -384,7 +606,7 @@ function renderQuestionGrid() {
   if (!testSession) return;
 
   const totalQuestions = testSession.questions.length;
-  const isPracticeMode = testSession.config.mode === "practice";
+  const isFeedbackMode = hasImmediateFeedback(testSession.config.mode);
 
   let html = '<div class="question-grid-title">Questions</div>';
   html += '<div class="question-grid-items">';
@@ -392,8 +614,8 @@ function renderQuestionGrid() {
   for (let i = 0; i < totalQuestions; i++) {
     let statusClass = "unanswered";
 
-    if (isPracticeMode) {
-      // Practice mode: show correct (green), incorrect (red), unanswered (gray)
+    if (isFeedbackMode) {
+      // Feedback modes show correct, incorrect, and unanswered states.
       if (questionResults[i] === true) {
         statusClass = "correct";
       } else if (questionResults[i] === false) {
@@ -401,7 +623,7 @@ function renderQuestionGrid() {
       }
     } else {
       // Timed mode: show answered (green), unanswered (gray)
-      if (userAnswers.hasOwnProperty(i)) {
+      if (hasStoredAnswerForQuestion(i)) {
         statusClass = "answered";
       }
     }
@@ -417,15 +639,9 @@ function renderQuestionGrid() {
   // Add click listeners
   document.querySelectorAll(".question-grid-item").forEach((item) => {
     item.addEventListener("click", () => {
-      const questionIndex = parseInt(item.dataset.question);
-      currentQuestion = questionIndex;
+      currentQuestion = parseInt(item.dataset.question);
       isFlipped = false;
-      if (testSession.config.mode === "flashcard") {
-        renderFlashcard();
-      } else {
-        renderQuestion();
-      }
-      renderQuestionGrid();
+      renderCurrentQuestionView();
     });
   });
 }
@@ -617,8 +833,8 @@ function renderQuestion() {
   }
 
   // Add choices
-  const isPracticeMode = testSession.config.mode === "practice";
-  const isAnswered = questionResults.hasOwnProperty(currentQuestion);
+  const isFeedbackMode = hasImmediateFeedback(testSession.config.mode);
+  const isAnswered = hasQuestionResult(currentQuestion);
   const correctAnswers = getCorrectAnswers(q);
   const votingInfo = parseVotingInfo(q.correct_answer);
 
@@ -632,7 +848,7 @@ function renderQuestion() {
     const isCorrect = correctAnswers.includes(choice.letter);
 
     let choiceClass = "";
-    if (isPracticeMode && isAnswered) {
+    if (isFeedbackMode && isAnswered) {
       if (isSelected && isCorrect) {
         choiceClass = "choice-correct";
       } else if (isSelected && !isCorrect) {
@@ -644,7 +860,7 @@ function renderQuestion() {
       choiceClass = "selected";
     }
 
-    const disabled = isPracticeMode && isAnswered ? "disabled" : "";
+    const disabled = isFeedbackMode && isAnswered ? "disabled" : "";
     const inputName = isMultipleAnswer ? `current-question-${currentQuestion}` : "current-question";
 
     html += `
@@ -669,8 +885,8 @@ function renderQuestion() {
   });
   html += "</div>";
 
-  // Show additional information in practice mode after answering
-  if (isPracticeMode && isAnswered) {
+  // Show additional information in immediate-feedback modes after answering.
+  if (isFeedbackMode && isAnswered) {
     // Show voting information if available
     if (votingInfo && votingInfo.length > 0) {
       html += '<div class="voting-info-practice">';
@@ -700,13 +916,27 @@ function renderQuestion() {
     }
   }
 
+  if (
+    shouldShowManualMistakeActions() &&
+    isAnswered
+  ) {
+    const isCorrect = questionResults[currentQuestion];
+    const decision = mistakeDecisions[currentQuestion];
+    const message = isCorrect
+      ? "Do you want to remove this question from the mistake bank?"
+      : "You answered incorrectly, so this question will stay in the bank.";
+
+    html += '<div class="mistake-review-actions">';
+    html += `<div class="mistake-review-message">${message}</div>`;
+    html += '<div class="mistake-review-buttons">';
+    html += `<button type="button" class="btn-mastered ${decision === "mastered" ? "is-selected" : ""}" ${isCorrect ? "" : "disabled"}>✓ Mastered</button>`;
+    html += `<button type="button" class="btn-review-again ${decision === "review" ? "is-selected" : ""}">↻ Review again</button>`;
+    html += "</div></div>";
+  }
+
   els.questionContainer.innerHTML = html;
 
-  // Add click listeners to choices (only if not already answered in practice mode)
-  const isPractice = testSession.config.mode === "practice";
-  const alreadyAnswered = questionResults.hasOwnProperty(currentQuestion);
-
-  if (!isPractice || !alreadyAnswered) {
+  if (!isFeedbackMode || !isAnswered) {
     document.querySelectorAll(".choice").forEach((choiceEl) => {
       choiceEl.addEventListener("click", () => {
         const letter = choiceEl.dataset.letter;
@@ -715,16 +945,44 @@ function renderQuestion() {
     });
   }
 
+  const masteredButton = document.querySelector(".btn-mastered");
+  const reviewAgainButton = document.querySelector(".btn-review-again");
+  const renderedQuestionIndex = currentQuestion;
+
+  if (masteredButton && !masteredButton.disabled) {
+    masteredButton.addEventListener("click", async () => {
+      masteredButton.disabled = true;
+      mistakeDecisions[renderedQuestionIndex] = "mastered";
+      await persistMistakeStatus(
+        testSession.questions[renderedQuestionIndex],
+        false
+      );
+      if (currentQuestion === renderedQuestionIndex) renderQuestion();
+    });
+  }
+
+  if (reviewAgainButton) {
+    reviewAgainButton.addEventListener("click", async () => {
+      reviewAgainButton.disabled = true;
+      mistakeDecisions[renderedQuestionIndex] = "review";
+      await persistMistakeStatus(
+        testSession.questions[renderedQuestionIndex],
+        true
+      );
+      if (currentQuestion === renderedQuestionIndex) renderQuestion();
+    });
+  }
+
   // Update navigation buttons
   els.prevBtn.disabled = currentQuestion === 0;
 
-  // Show/hide submit answer button in practice mode
-  const hasSelectedAnswer = userAnswers.hasOwnProperty(currentQuestion);
+  // Show/hide submit answer button in immediate-feedback modes.
+  const hasSelectedAnswer = hasStoredAnswerForQuestion(currentQuestion);
 
-  if (isPractice) {
+  if (isFeedbackMode) {
     els.submitAnswerBtn.classList.remove("hidden");
     // Enable/disable based on whether answer is selected and not yet submitted
-    els.submitAnswerBtn.disabled = !hasSelectedAnswer || alreadyAnswered;
+    els.submitAnswerBtn.disabled = !hasSelectedAnswer || isAnswered;
   } else {
     els.submitAnswerBtn.classList.add("hidden");
   }
@@ -740,10 +998,10 @@ function renderQuestion() {
 
 // Select answer
 function selectAnswer(letter) {
-  const isPracticeMode = testSession.config.mode === "practice";
+  const isFeedbackMode = hasImmediateFeedback(testSession.config.mode);
 
-  // In practice mode, don't allow changing answer if already submitted
-  if (isPracticeMode && questionResults.hasOwnProperty(currentQuestion)) {
+  // Feedback modes lock an answer after it is submitted.
+  if (isFeedbackMode && hasQuestionResult(currentQuestion)) {
     return;
   }
 
@@ -769,63 +1027,60 @@ function selectAnswer(letter) {
     // Sort answers alphabetically
     currentAnswers.sort();
 
-    userAnswers[currentQuestion] = currentAnswers.length > 0 ? currentAnswers : undefined;
+    if (currentAnswers.length > 0) {
+      userAnswers[currentQuestion] = currentAnswers;
+    } else {
+      delete userAnswers[currentQuestion];
+    }
   } else {
     // Handle single selection with radio
     userAnswers[currentQuestion] = letter;
   }
 
   // In timed mode, update grid immediately
-  if (!isPracticeMode) {
+  if (!isFeedbackMode) {
     renderQuestionGrid();
   }
 
   renderQuestion();
 }
 
-// Submit current answer (for practice mode)
+// Submit current answer for an immediate-feedback mode.
 function submitCurrentAnswer() {
-  const isPracticeMode = testSession.config.mode === "practice";
+  const isFeedbackMode = hasImmediateFeedback(testSession.config.mode);
 
-  if (!isPracticeMode) return;
-  if (!userAnswers[currentQuestion]) return;
-  if (questionResults.hasOwnProperty(currentQuestion)) return;
+  if (!isFeedbackMode) return;
+  if (!hasSelectedAnswerForQuestion(currentQuestion)) return;
+  if (hasQuestionResult(currentQuestion)) return;
 
   // Check if answer is correct
   const q = testSession.questions[currentQuestion];
   const correctAnswers = getCorrectAnswers(q);
   const userAnswer = userAnswers[currentQuestion];
 
-  let isCorrect = false;
-  if (Array.isArray(userAnswer)) {
-    // Multiple answers: check if arrays match
-    isCorrect = userAnswer.length === correctAnswers.length &&
-      userAnswer.every(a => correctAnswers.includes(a));
-  } else {
-    // Single answer: check if it matches
-    isCorrect = correctAnswers.length === 1 && correctAnswers[0] === userAnswer;
-  }
+  const isCorrect = isAnswerCorrect(userAnswer, correctAnswers);
 
   questionResults[currentQuestion] = isCorrect;
+  updateMistakeBankAfterAnswer(q, isCorrect, currentQuestion);
 
   // Update question grid and re-render
   renderQuestionGrid();
   renderQuestion();
 }
 
-// Submit answer button (for practice mode)
+// Submit answer button for immediate-feedback modes.
 els.submitAnswerBtn.addEventListener("click", () => {
   submitCurrentAnswer();
 });
 
 // Navigation
 els.prevBtn.addEventListener("click", () => {
-  // Auto-submit current answer before moving if in practice mode and answer is selected
-  const isPracticeMode = testSession.config.mode === "practice";
+  // Auto-submit the current answer before moving in a feedback mode.
+  const isFeedbackMode = hasImmediateFeedback(testSession.config.mode);
   if (
-    isPracticeMode &&
-    userAnswers[currentQuestion] &&
-    !questionResults.hasOwnProperty(currentQuestion)
+    isFeedbackMode &&
+    hasSelectedAnswerForQuestion(currentQuestion) &&
+    !hasQuestionResult(currentQuestion)
   ) {
     submitCurrentAnswer();
   }
@@ -833,22 +1088,17 @@ els.prevBtn.addEventListener("click", () => {
   if (currentQuestion > 0) {
     currentQuestion--;
     isFlipped = false;
-    if (testSession.config.mode === "flashcard") {
-      renderFlashcard();
-    } else {
-      renderQuestion();
-    }
-    renderQuestionGrid();
+    renderCurrentQuestionView();
   }
 });
 
 els.nextBtn.addEventListener("click", () => {
-  // Auto-submit current answer before moving if in practice mode and answer is selected
-  const isPracticeMode = testSession.config.mode === "practice";
+  // Auto-submit the current answer before moving in a feedback mode.
+  const isFeedbackMode = hasImmediateFeedback(testSession.config.mode);
   if (
-    isPracticeMode &&
-    userAnswers[currentQuestion] &&
-    !questionResults.hasOwnProperty(currentQuestion)
+    isFeedbackMode &&
+    hasSelectedAnswerForQuestion(currentQuestion) &&
+    !hasQuestionResult(currentQuestion)
   ) {
     submitCurrentAnswer();
   }
@@ -856,12 +1106,7 @@ els.nextBtn.addEventListener("click", () => {
   if (currentQuestion < testSession.questions.length - 1) {
     currentQuestion++;
     isFlipped = false;
-    if (testSession.config.mode === "flashcard") {
-      renderFlashcard();
-    } else {
-      renderQuestion();
-    }
-    renderQuestionGrid();
+    renderCurrentQuestionView();
   }
 });
 
@@ -918,14 +1163,7 @@ function submitTest() {
       : (userAnswer || "Not answered");
     const correctAnswerDisplay = correctAnswers.join(", ");
 
-    // Check if correct
-    let isCorrect = false;
-    if (Array.isArray(userAnswer)) {
-      isCorrect = userAnswer.length === correctAnswers.length &&
-        userAnswer.every(a => correctAnswers.includes(a));
-    } else if (userAnswer) {
-      isCorrect = correctAnswers.length === 1 && correctAnswers[0] === userAnswer;
-    }
+    const isCorrect = isAnswerCorrect(userAnswer, correctAnswers);
 
     if (isCorrect) correct++;
 
@@ -936,6 +1174,14 @@ function submitTest() {
       correctAnswer: correctAnswerDisplay,
       isCorrect,
     };
+  });
+
+  details.forEach((detail, index) => {
+    updateMistakeBankAfterAnswer(
+      testSession.questions[index],
+      detail.isCorrect,
+      index
+    );
   });
 
   const result = {
@@ -1006,6 +1252,7 @@ async function saveResultToDatabase(result) {
   try {
     // Prepare result data for database with full questions
     const resultData = {
+      quizId: testSession.quizId,
       quizName: testSession.fileName,
       mode: testSession.config.mode,
       score: result.score,
@@ -1051,6 +1298,7 @@ function showSavedResult(result) {
   testSession = {
     questions: result.questions || [],
     fileName: result.quizName,
+    quizId: result.quizId || null,
     config: result.config || {},
   };
 
@@ -1175,6 +1423,7 @@ els.newTestBtn.addEventListener("click", () => {
   testSession = null;
   userAnswers = {};
   questionResults = {};
+  mistakeDecisions = {};
   currentQuestion = 0;
   testStartTime = null;
   clearInterval(timerInterval);
@@ -1402,12 +1651,7 @@ document.addEventListener("keydown", (e) => {
       if (currentQuestion > 0) {
         currentQuestion--;
         isFlipped = false;
-        if (isFlashcardMode) {
-          renderFlashcard();
-        } else {
-          renderQuestion();
-        }
-        renderQuestionGrid();
+        renderCurrentQuestionView();
       }
       break;
 
@@ -1416,12 +1660,7 @@ document.addEventListener("keydown", (e) => {
       if (currentQuestion < testSession.questions.length - 1) {
         currentQuestion++;
         isFlipped = false;
-        if (isFlashcardMode) {
-          renderFlashcard();
-        } else {
-          renderQuestion();
-        }
-        renderQuestionGrid();
+        renderCurrentQuestionView();
       }
       break;
 

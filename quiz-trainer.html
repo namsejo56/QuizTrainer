@@ -50,6 +50,14 @@
                   <div class="mode-desc">Quick review with flip cards</div>
                 </div>
               </label>
+              <label id="mistakesModeCard" class="mode-card">
+                <input type="radio" name="mode" value="mistakes">
+                <div class="mode-card-content">
+                  <div class="mode-icon">🔁</div>
+                  <div class="mode-name">Review Mistakes</div>
+                  <div id="mistakesModeDesc" class="mode-desc">Practice questions you previously missed</div>
+                </div>
+              </label>
             </div>
           </div>
           <!-- Time Limit (for timed mode) -->
@@ -59,6 +67,15 @@
               <input type="number" id="timeMinutes" min="1" value="60" class="styled-input">
               <span class="input-unit">minutes</span>
             </div>
+          </div>
+          <div class="config-section" id="mistakeSettingsGroup" style="display: none;">
+            <h3 class="section-title">🔁 Mistake Review Settings</h3>
+            <label class="checkbox-option">
+              <input type="checkbox" id="autoRemoveMistakes" checked>
+              <span class="checkbox-label">
+                <span class="checkbox-text">Remove after one correct answer</span>
+              </span>
+            </label>
           </div>
           <!-- Question Selection -->
           <div class="config-section">

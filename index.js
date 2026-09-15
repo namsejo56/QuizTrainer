@@ -110,6 +110,7 @@ async function startSavedQuiz(quizId) {
     sessionStorage.setItem(
       "quizData",
       JSON.stringify({
+        quizId: quiz.id,
         questions: quiz.questions,
         fileName: quiz.name,
         fromSaved: true,
@@ -200,16 +201,17 @@ els.saveQuizBtn.addEventListener("click", async () => {
   }
 
   try {
-    await quizDB.saveQuiz(quizName, questions, fileName);
+    const savedQuiz = await quizDB.saveQuiz(quizName, questions, fileName);
     els.saveQuizModal.classList.add("hidden");
 
     // Store quiz data and redirect
     sessionStorage.setItem(
       "quizData",
       JSON.stringify({
+        quizId: savedQuiz.id,
         questions: questions,
         fileName: quizName,
-        fromSaved: false,
+        fromSaved: true,
       })
     );
 
@@ -294,6 +296,7 @@ function renderTestHistory(results = null) {
       practice: "✏️",
       timed: "⏱️",
       flashcard: "🎴",
+      mistakes: "🔁",
     };
     const modeIcon = modeIcons[result.mode] || "📝";
 

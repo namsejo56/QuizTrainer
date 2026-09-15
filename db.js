@@ -64,6 +64,8 @@ class QuizDB {
         questions: questions,
         createdAt: new Date().toISOString(),
         questionCount: questions.length,
+        mistakeQuestionKeys: [],
+        mistakeBankVersion: 1,
       };
 
       const request = store.add(quizData);
@@ -188,6 +190,91 @@ class QuizDB {
     });
   }
 
+  async updateQuizMistakeBank(id, updateMistakeBank, saveErrorMessage) {
+    if (!this.db) {
+      await this.init();
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(["quizzes"], "readwrite");
+      const store = transaction.objectStore("quizzes");
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const quiz = getRequest.result;
+        if (!quiz) {
+          reject(new Error("Quiz not found"));
+          return;
+        }
+
+        const shouldSave = updateMistakeBank(quiz) !== false;
+        if (!shouldSave) {
+          resolve(quiz);
+          return;
+        }
+
+        const updateRequest = store.put(quiz);
+        updateRequest.onsuccess = () => resolve(quiz);
+        updateRequest.onerror = () => reject(new Error(saveErrorMessage));
+      };
+
+      getRequest.onerror = () => reject(
+        new Error("Failed to load quiz mistake bank")
+      );
+    });
+  }
+
+  getMistakeKeys(quiz) {
+    return Array.isArray(quiz.mistakeQuestionKeys)
+      ? quiz.mistakeQuestionKeys
+      : [];
+  }
+
+  // Get the persisted mistake bank for a saved quiz
+  async getMistakeBank(quizId) {
+    const quiz = await this.getQuizById(quizId);
+    return {
+      keys: this.getMistakeKeys(quiz),
+      version: quiz.mistakeBankVersion || 0,
+    };
+  }
+
+  // Seed a legacy quiz's mistake bank once without overwriting later progress
+  async initializeMistakeBank(quizId, questionKeys) {
+    return this.updateQuizMistakeBank(
+      quizId,
+      (quiz) => {
+        if (quiz.mistakeBankVersion) {
+          return false;
+        }
+
+        quiz.mistakeQuestionKeys = [...new Set(questionKeys)];
+        quiz.mistakeBankVersion = 1;
+      },
+      "Failed to initialize mistake bank"
+    ).then((quiz) => this.getMistakeKeys(quiz));
+  }
+
+  // Atomically add or remove a question from a saved quiz's mistake bank
+  async setQuestionMistakeStatus(quizId, questionKey, needsReview) {
+    return this.updateQuizMistakeBank(
+      quizId,
+      (quiz) => {
+        const keys = new Set(this.getMistakeKeys(quiz));
+
+        if (needsReview) {
+          keys.add(questionKey);
+        } else {
+          keys.delete(questionKey);
+        }
+
+        quiz.mistakeQuestionKeys = [...keys];
+        quiz.mistakeBankVersion = 1;
+      },
+      "Failed to update mistake bank"
+    ).then((quiz) => quiz.mistakeQuestionKeys);
+  }
+
   // Save test result
   async saveResult(resultData) {
     if (!this.db) {
@@ -199,6 +286,7 @@ class QuizDB {
       const store = transaction.objectStore("results");
 
       const result = {
+        quizId: resultData.quizId || null,
         quizName: resultData.quizName,
         mode: resultData.mode,
         score: resultData.score,
