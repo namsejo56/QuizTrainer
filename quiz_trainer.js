@@ -174,6 +174,24 @@ function updateMistakeBankAfterAnswer(question, isCorrect, questionIndex) {
   }
 }
 
+async function completeMistakeDecision(questionIndex, decision, needsReview) {
+  mistakeDecisions[questionIndex] = decision;
+  await persistMistakeStatus(
+    testSession.questions[questionIndex],
+    needsReview
+  );
+
+  if (currentQuestion !== questionIndex) return;
+
+  if (currentQuestion < testSession.questions.length - 1) {
+    currentQuestion++;
+    isFlipped = false;
+    renderCurrentQuestionView();
+  } else {
+    submitTest();
+  }
+}
+
 function normalizeQuestionValue(value) {
   return String(value ?? "")
     .normalize("NFKC")
@@ -952,24 +970,24 @@ function renderQuestion() {
   if (masteredButton && !masteredButton.disabled) {
     masteredButton.addEventListener("click", async () => {
       masteredButton.disabled = true;
-      mistakeDecisions[renderedQuestionIndex] = "mastered";
-      await persistMistakeStatus(
-        testSession.questions[renderedQuestionIndex],
+      reviewAgainButton.disabled = true;
+      await completeMistakeDecision(
+        renderedQuestionIndex,
+        "mastered",
         false
       );
-      if (currentQuestion === renderedQuestionIndex) renderQuestion();
     });
   }
 
   if (reviewAgainButton) {
     reviewAgainButton.addEventListener("click", async () => {
       reviewAgainButton.disabled = true;
-      mistakeDecisions[renderedQuestionIndex] = "review";
-      await persistMistakeStatus(
-        testSession.questions[renderedQuestionIndex],
+      if (masteredButton) masteredButton.disabled = true;
+      await completeMistakeDecision(
+        renderedQuestionIndex,
+        "review",
         true
       );
-      if (currentQuestion === renderedQuestionIndex) renderQuestion();
     });
   }
 
