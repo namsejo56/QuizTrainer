@@ -539,13 +539,10 @@ function generateTest(config) {
     selectedQuestions = sortedQuestions.slice(startIdx, endIdx);
   } else {
     // Random selection
-    selectedQuestions = [...sortedQuestions];
-    if (selectedQuestions.length > config.numQuestions) {
-      selectedQuestions = shuffleArray(selectedQuestions, seed).slice(
-        0,
-        config.numQuestions
-      );
-    }
+    selectedQuestions = shuffleArray(sortedQuestions, seed).slice(
+      0,
+      config.numQuestions
+    );
   }
 
   // Shuffle choices if enabled
