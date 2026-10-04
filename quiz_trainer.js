@@ -70,6 +70,50 @@ function sanitizeHTML(str) {
   return div.innerHTML;
 }
 
+// Nested replies in the imported JSON define the discussion hierarchy.
+function renderCommentList(comments) {
+  let count = 0;
+  let html = '<ol class="comment-list">';
+
+  comments.forEach((comment) => {
+    if (!comment || typeof comment !== "object") return;
+    const replies = renderCommentList(
+      Array.isArray(comment.replies) ? comment.replies : []
+    );
+    count += 1 + replies.count;
+    html += '<li class="comment-thread"><article class="discussion-comment">';
+    html += '<header class="comment-meta">';
+    html += `<strong class="comment-author">${sanitizeHTML(comment.author || "Anonymous")}</strong>`;
+    if (comment.created_at) {
+      html += `<span class="comment-date">${sanitizeHTML(comment.created_at)}</span>`;
+    }
+    html += '</header><div class="comment-badges">';
+    if (comment.selected_answer) {
+      html += `<span class="comment-answer">Selected answer: ${sanitizeHTML(comment.selected_answer)}</span>`;
+    }
+    if (Number.isFinite(comment.upvotes) && comment.upvotes >= 0) {
+      html += `<span class="comment-upvotes">${comment.upvotes} upvote${comment.upvotes === 1 ? "" : "s"}</span>`;
+    }
+    html += `</div><p class="comment-text">${sanitizeHTML(comment.text || "")}</p></article>`;
+    if (replies.count > 0) {
+      html += '<details class="comment-replies" open>';
+      html += `<summary>${replies.count} repl${replies.count === 1 ? "y" : "ies"}</summary>`;
+      html += `${replies.html}</details>`;
+    }
+    html += '</li>';
+  });
+
+  return { html: `${html}</ol>`, count };
+}
+
+function renderDiscussion(question) {
+  const comments = renderCommentList(
+    Array.isArray(question.comments) ? question.comments : []
+  );
+  if (!comments.count) return "";
+  return `<details class="discussion"><summary>Discussion <span class="discussion-count">${comments.count} comment${comments.count === 1 ? "" : "s"}</span></summary><div class="discussion-body"><p class="discussion-note">Community discussion. Selected answers reflect each author's opinion.</p>${comments.html}</div></details>`;
+}
+
 // Utility: Shuffle array with seed
 function shuffleArray(array, seed = Date.now()) {
   const arr = [...array];
@@ -769,6 +813,9 @@ function renderFlashcard() {
   html += "← → to navigate | ↑ ↓ to flip card";
   html += "</div>";
 
+  // Keep discussion outside the rotating card so its controls do not flip it.
+  html += `<div class="flashcard-discussion ${isFlipped ? "" : "hidden"}">${renderDiscussion(q)}</div>`;
+
   els.questionContainer.innerHTML = html;
 
   // Update navigation buttons
@@ -801,6 +848,8 @@ function toggleFlashcard() {
       flashcard.classList.remove("flipped");
     }
   }
+  const discussion = els.questionContainer.querySelector(".flashcard-discussion");
+  if (discussion) discussion.classList.toggle("hidden", !isFlipped);
 }
 
 // Render question
@@ -929,6 +978,7 @@ function renderQuestion() {
       html += sanitizeHTML(q.correct_content);
       html += "</div>";
     }
+    html += renderDiscussion(q);
   }
 
   if (
@@ -1626,6 +1676,7 @@ function showQuestionDetail(questionIndex) {
     html += "</div>";
   }
 
+  html += renderDiscussion(q);
   els.questionDetailContainer.innerHTML = html;
   els.questionDetailModal.classList.remove("hidden");
 }

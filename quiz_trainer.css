@@ -1331,6 +1331,124 @@ body {
   border: 2px solid #e74c3c;
 }
 
+/* Community discussion */
+.discussion {
+  margin-top: 24px;
+  border: 1px solid #dfe3f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #333;
+  text-align: left;
+}
+
+.discussion > summary {
+  padding: 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.discussion > summary:hover,
+.comment-replies > summary:hover {
+  background: #f3f4fc;
+}
+
+.discussion summary:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+
+.discussion-count {
+  margin-left: 8px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: #555;
+}
+
+.discussion-body {
+  padding: 0 16px 16px;
+}
+
+.discussion-note {
+  margin-bottom: 16px;
+  color: #555;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.comment-list {
+  list-style: none;
+}
+
+.comment-thread + .comment-thread {
+  margin-top: 16px;
+}
+
+.discussion-comment {
+  padding: 14px;
+  border: 1px solid #e5e7ef;
+  border-radius: 8px;
+  background: #fafbfe;
+  overflow-wrap: anywhere;
+}
+
+.comment-meta,
+.comment-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.comment-author {
+  font-size: 0.9rem;
+}
+
+.comment-date,
+.comment-upvotes {
+  color: #555;
+  font-size: 0.75rem;
+}
+
+.comment-badges:not(:empty) {
+  margin-top: 8px;
+}
+
+.comment-answer {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #eceffd;
+  color: #404b9b;
+  font-size: 0.75rem;
+}
+
+.comment-text {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.comment-replies {
+  margin: 8px 0 0 16px;
+  padding-left: 12px;
+  border-left: 2px solid #dfe3f0;
+}
+
+.comment-replies > summary {
+  width: fit-content;
+  padding: 10px 4px;
+  color: #404b9b;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* Preserve reading width in deep threads while retaining their connector. */
+.comment-replies .comment-replies .comment-replies {
+  margin-left: 0;
+}
+
 /* Flashcard Mode */
 .flashcard-container {
   perspective: 1000px;
@@ -1610,6 +1728,23 @@ body {
 }
 
 @media (max-width: 768px) {
+  .discussion-body {
+    padding: 0 10px 10px;
+  }
+
+  .discussion-comment {
+    padding: 10px;
+  }
+
+  .comment-replies {
+    margin-left: 6px;
+    padding-left: 8px;
+  }
+
+  .comment-replies .comment-replies {
+    margin-left: 0;
+  }
+
   .container {
     padding: 10px;
   }
