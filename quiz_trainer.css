@@ -853,6 +853,15 @@ body {
   margin-left: 5px;
 }
 
+.choice-explanation {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.2);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #374151;
+}
+
 .choice-images {
   margin-top: 10px;
   margin-left: 30px;

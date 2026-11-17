@@ -70,6 +70,16 @@ function sanitizeHTML(str) {
   return div.innerHTML;
 }
 
+// Per-choice explanation from meta.explanations[letter]; imported text may start with a "-- " marker.
+function renderChoiceExplanation(question, letter) {
+  const explanations = question.meta && question.meta.explanations;
+  const text = explanations && typeof explanations[letter] === "string"
+    ? explanations[letter].replace(/^\s*--\s*/, "").trim()
+    : "";
+  if (!text) return "";
+  return `<div class="choice-explanation"><strong>💡 Why:</strong> ${sanitizeHTML(text)}</div>`;
+}
+
 // Nested replies in the imported JSON define the discussion hierarchy.
 function renderCommentList(comments) {
   let count = 0;
@@ -943,6 +953,10 @@ function renderQuestion() {
           }">`;
       });
       html += "</div>";
+    }
+
+    if (isFeedbackMode && isAnswered) {
+      html += renderChoiceExplanation(q, choice.letter);
     }
 
     html += "</div>";
